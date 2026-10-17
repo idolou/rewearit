@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package rewearit.events;
+
+import "google/protobuf/timestamp.proto";
+
+// Standard Event Header Envelope for all Kafka Messages
+message EventHeader {
+  string event_id = 1;
+  string event_type = 2; // e.g., "item.created", "order.escrow_locked"
+  google.protobuf.Timestamp timestamp = 3;
+  string correlation_id = 4;
+  string producer_service = 5; // e.g., "catalog-service"
+  int32 schema_version = 6;
+}
+
+// -------------------------------------------------------------
+// Catalog & Item Events
+// -------------------------------------------------------------
+
+message ItemCreatedEvent {
+  EventHeader header = 1;
+  string item_id = 2;
+  string seller_id = 3;
+  string title = 4;
+  string category = 5;
+  string brand = 6;
+  double proposed_price = 7;
+  repeated string image_urls = 8;
+}
+
+message ItemStatusChangedEvent {
+  EventHeader header = 1;
+  string item_id = 2;
+  string previous_status = 3;
+  string new_status = 4; // "ACTIVE", "RESERVED", "SOLD", "CANCELLED"
+  string reason = 5;
+}
+
+// -------------------------------------------------------------
+// AI Multimodal Appraisal Events
+// -------------------------------------------------------------
+
+message AIAppraisalCompletedEvent {
+  EventHeader header = 1;
+  string item_id = 2;
+  string detected_brand = 3;
+  string detected_category = 4;
+  string condition_grade = 5; // "NEW_WITH_TAGS", "EXCELLENT", "GOOD", "FAIR"
+  double condition_confidence = 6;
+  repeated string detected_attributes = 7; // e.g. ["vintage", "denim", "distressed"]
+  double suggested_min_price = 8;
+  double suggested_max_price = 9;
+  repeated float visual_embedding = 10; // 512-dim normalized vector
+}
+
+// -------------------------------------------------------------
+// Order & Transaction Events
+// -------------------------------------------------------------
+
+message OrderPlacedEvent {
+  EventHeader header = 1;
+  string order_id = 2;
+  string item_id = 3;
+  string buyer_id = 4;
+  string seller_id = 5;
+  double total_amount = 6;
+  string idempotency_key = 7;
+}
+
+message OrderEscrowLockedEvent {
+  EventHeader header = 1;
+  string order_id = 2;
+  string item_id = 3;
+  double escrow_amount = 4;
+  google.protobuf.Timestamp locked_at = 5;
+}
+
+message OrderCompletedEvent {
+  EventHeader header = 1;
+  string order_id = 2;
+  string item_id = 3;
+  string buyer_id = 4;
+  string seller_id = 5;
+  double payout_amount = 6;
+  google.protobuf.Timestamp completed_at = 7;
+}
+
+// -------------------------------------------------------------
+// Telemetry & Clickstream Events
+// -------------------------------------------------------------
+
+message UserInteractionEvent {
+  EventHeader header = 1;
+  string session_id = 2;
+  string user_id = 3; // Optional for anonymous visitors
+  string interaction_type = 4; // "VIEW", "SEARCH", "ADD_TO_FAVORITES", "PRICE_CHECK"
+  string target_item_id = 5;
+  string search_query = 6;
+  string client_ip = 7;
+  string user_agent = 8;
+}

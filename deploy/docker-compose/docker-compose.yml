@@ -1,0 +1,121 @@
+version: "3.9"
+
+networks:
+  rewearit-mesh:
+    driver: bridge
+
+volumes:
+  redpanda-data:
+  minio-data:
+  postgres-catalog-data:
+  postgres-orders-data:
+  postgres-pricing-data:
+
+services:
+  # -------------------------------------------------------------
+  # Message Streaming (Redpanda / Kafka API)
+  # -------------------------------------------------------------
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.2
+    container_name: rewearit-redpanda
+    networks:
+      - rewearit-mesh
+    ports:
+      - "9092:9092"
+      - "9644:9644"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    command:
+      - redpanda start
+      - --smp 1
+      - --memory 1G
+      - --overprovisioned
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:9092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:9092
+
+  # Redpanda Console (Web UI for Kafka visualization)
+  console:
+    image: docker.redpanda.com/redpandadata/console:v2.5.2
+    container_name: rewearit-redpanda-console
+    networks:
+      - rewearit-mesh
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    depends_on:
+      - redpanda
+
+  # -------------------------------------------------------------
+  # Distributed Caching & Locks (Redis)
+  # -------------------------------------------------------------
+  redis:
+    image: redis:7.2-alpine
+    container_name: rewearit-redis
+    networks:
+      - rewearit-mesh
+    ports:
+      - "6379:6379"
+
+  # -------------------------------------------------------------
+  # Object Storage (S3 API via MinIO)
+  # -------------------------------------------------------------
+  minio:
+    image: minio/minio:RELEASE.2024-05-01T01-11-10Z
+    container_name: rewearit-minio
+    networks:
+      - rewearit-mesh
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadminpassword
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+
+  # -------------------------------------------------------------
+  # Isolated Databases per Microservice
+  # -------------------------------------------------------------
+  postgres-catalog:
+    image: pgvector/pgvector:pg16
+    container_name: rewearit-postgres-catalog
+    networks:
+      - rewearit-mesh
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: catalog_db
+      POSTGRES_USER: catalog_user
+      POSTGRES_PASSWORD: catalog_password
+    volumes:
+      - postgres-catalog-data:/var/lib/postgresql/data
+
+  postgres-orders:
+    image: postgres:16-alpine
+    container_name: rewearit-postgres-orders
+    networks:
+      - rewearit-mesh
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: orders_db
+      POSTGRES_USER: orders_user
+      POSTGRES_PASSWORD: orders_password
+    volumes:
+      - postgres-orders-data:/var/lib/postgresql/data
+
+  postgres-pricing:
+    image: postgres:16-alpine
+    container_name: rewearit-postgres-pricing
+    networks:
+      - rewearit-mesh
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: pricing_db
+      POSTGRES_USER: pricing_user
+      POSTGRES_PASSWORD: pricing_password
+    volumes:
+      - postgres-pricing-data:/var/lib/postgresql/data
