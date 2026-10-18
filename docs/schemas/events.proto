@@ -59,6 +59,9 @@ message ItemCreatedEvent {
   string brand = 6;
   Money proposed_price = 7;
   repeated string image_urls = 8;
+  string description = 9;
+  string size = 10;
+  ConditionGrade declared_condition = 11;
 }
 
 message ItemStatusChangedEvent {
@@ -176,4 +179,32 @@ message UserInteractionEvent {
   string search_query = 6;
   string client_ip = 7;
   string user_agent = 8;
+}
+
+// =============================================================
+// Security & Analytics Payloads
+// =============================================================
+
+message SecurityAlertPayload {
+  EventHeader header = 1;
+  string alert_id = 2;
+  string alert_type = 3; // "HIGH_FREQUENCY_VIEWS", "BOT_SCRAPING", "PAYMENT_BRUTE_FORCE"
+  string client_ip = 4;
+  string user_id = 5;
+  string session_id = 6;
+  int32 request_count = 7;
+  string mitigation_action = 8; // "RATE_LIMIT_STRICT", "BLOCK_TEMPORARY"
+  google.protobuf.Timestamp detected_at = 9;
+}
+
+message PricingMetricsBatchPayload {
+  EventHeader header = 1;
+  string batch_id = 2;
+  string brand = 3;
+  string category = 4;
+  ConditionGrade condition_grade = 5;
+  double resale_retention_percentage = 6;
+  double sales_velocity_score = 7;
+  int32 sample_size = 8;
+  google.protobuf.Timestamp calculated_at = 9;
 }

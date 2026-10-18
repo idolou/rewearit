@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package rewearit.catalog;
+
+import "events.proto";
+
+service CatalogService {
+  rpc GetItem(GetItemRequest) returns (ItemResponse);
+  rpc ReserveItem(ReserveItemRequest) returns (ReserveItemResponse);
+  rpc ReleaseItem(ReleaseItemRequest) returns (ReleaseItemResponse);
+  rpc MarkItemSold(MarkItemSoldRequest) returns (ItemResponse);
+  rpc VisualSearch(VisualSearchRequest) returns (VisualSearchResponse);
+}
+
+message GetItemRequest {
+  string item_id = 1;
+}
+
+message ItemResponse {
+  string item_id = 1;
+  string seller_id = 2;
+  string title = 3;
+  string description = 4;
+  string category = 5;
+  string brand = 6;
+  string size = 7;
+  rewearit.events.ConditionGrade condition_grade = 8;
+  rewearit.events.Money price = 9;
+  rewearit.events.ItemStatus status = 10;
+  repeated string image_urls = 11;
+  int64 reserved_until_timestamp = 12;
+}
+
+message ReserveItemRequest {
+  string item_id = 1;
+  string order_id = 2;
+  string buyer_id = 3;
+  int32 ttl_seconds = 4; // Defaults to 900 (15 minutes)
+}
+
+message ReserveItemResponse {
+  bool success = 1;
+  string error_message = 2;
+  int64 expires_at_timestamp = 3;
+}
+
+message ReleaseItemRequest {
+  string item_id = 1;
+  string order_id = 2;
+  string reason = 3;
+}
+
+message ReleaseItemResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message MarkItemSoldRequest {
+  string item_id = 1;
+  string order_id = 2;
+  string buyer_id = 3;
+}
+
+message VisualSearchRequest {
+  repeated float query_embedding = 1; // 512-dim normalized vector
+  int32 limit = 2;                    // Top-K results
+  string category_filter = 3;         // Optional category filter
+  rewearit.events.Money max_price = 4;// Optional max price
+}
+
+message VisualSearchResponse {
+  repeated ScoredItem items = 1;
+}
+
+message ScoredItem {
+  ItemResponse item = 1;
+  float similarity_score = 2; // Cosine similarity [0.0 - 1.0]
+}

@@ -67,8 +67,20 @@ message ReserveItemResponse {
   int64 expires_at_timestamp = 3;
 }
 ```
+*(Canonical definition maintained in [`docs/schemas/catalog_service.proto`](../schemas/catalog_service.proto))*
 
-### Events Handled & Produced
+### Concurrency & Reservation Guarantee (1-of-1 Garments)
+Because second-hand inventory is strictly 1-of-1:
+1. **Atomic Lock**: `ReserveItem` runs a single conditional transaction:
+   ```sql
+   UPDATE items
+   SET status = 'RESERVED', reserved_until = NOW() + INTERVAL '15 minutes'
+   WHERE id = :item_id AND (status = 'ACTIVE' OR (status = 'RESERVED' AND reserved_until < NOW()));
+   ```
+2. **Distributed Redis Key**: An associated Redis key `item:reservation:{item_id}` is set with `EX 900 NX` storing `{order_id}`.
+3. **Reconciliation**:
+   - **Lazy Release**: Query filters (`GetItem`, visual search) automatically treat items as `ACTIVE` if `status == 'RESERVED' AND reserved_until < NOW()`.
+   - **Background Reaper**: A periodic task runs every 60 seconds resetting expired reservations whose orders never finalized.
 - **Produces**:
   - `ItemCreatedEvent` (`item.created`) on `rewearit.items.events`
   - `ItemStatusChangedEvent` (`item.status_changed`) on `rewearit.items.events`

@@ -40,12 +40,11 @@ The `rewearit-data-pipeline` processes two distinct workloads:
 ## 2. Real-Time Streaming Workloads
 
 ### Job 1: Clickstream Ingestion & Trending Items Index
-- **Input Topic**: `rewearit.telemetry.events`
-- **Windowing**: 15-minute sliding window with 5-minute slide and 2-minute late-data watermark:
+- **Windowing**: 15-minute sliding window with 5-minute slide and 10-minute late-data watermark (accommodating mobile reconnect bursts):
   ```python
   windowed_views = (
       telemetry_stream
-      .withWatermark("timestamp", "2 minutes")
+      .withWatermark("timestamp", "10 minutes")
       .groupBy(
           window("timestamp", "15 minutes", "5 minutes"),
           col("target_item_id")
@@ -54,7 +53,9 @@ The `rewearit-data-pipeline` processes two distinct workloads:
       .withColumnRenamed("count", "recent_view_count")
   )
   ```
-- **Hot Sink**: Writes rolling top-viewed items directly to Redis sorted sets (`ZADD trending_items <count> <item_id>`) for real-time recommendation feeds.
+- **Dual Sinks**:
+  - **Hot Sink**: Writes rolling top-viewed items directly to Redis sorted sets (`ZADD trending_items <count> <item_id>`) for real-time recommendation feeds.
+  - **Cold Lakehouse Sink**: Appends raw telemetry events continuously to partitioned Parquet files on S3/MinIO without windowing dropouts, preserving 100% of historical events for daily batch jobs.
 
 ### Job 2: Bot & Fraud Detection Engine
 - Aggregates request rates per IP/User session:

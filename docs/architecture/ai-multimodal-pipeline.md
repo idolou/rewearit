@@ -71,9 +71,9 @@ The worker invokes a structured VLM call with strict JSON schema enforcement ref
   $$\text{sim}(u, v) = \frac{u \cdot v}{\|u\| \|v\|}$$
 
 ### Stage 4: Visual Similarity Search Execution
-The `catalog-service` consumes `AIAppraisalCompletedEvent`, writes the embedding, and uses PostgreSQL's `pgvector` index:
+The `catalog-service` consumes `AIAppraisalCompletedEvent`, writes the embedding, and uses PostgreSQL's `pgvector` HNSW index (supporting incremental ingestion from row 0 without pre-training):
 ```sql
-CREATE INDEX ON items USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX idx_items_embedding_hnsw ON items USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
 
 -- Query: Find visually similar clothing
 SELECT id, title, price, 1 - (embedding <=> :target_embedding) AS similarity
