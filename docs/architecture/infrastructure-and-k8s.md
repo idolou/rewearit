@@ -2,86 +2,38 @@
 
 ## 1. Local Development Topology (Docker Compose)
 
-For local development and continuous testing, the entire platform runs via Docker Compose with zero external cloud dependencies.
+For local development, integration testing, and CI pipelines, the entire platform runs via Docker Compose with zero external cloud dependencies.
 
-```yaml
-version: "3.9"
+The authoritative configuration is maintained in:
+👉 **[`deploy/docker-compose/docker-compose.yml`](../../deploy/docker-compose/docker-compose.yml)**
 
-services:
-  # --- Message Broker ---
-  redpanda:
-    image: docker.redpanda.com/redpandadata/redpanda:v24.1.2
-    container_name: rewearit-redpanda
-    ports:
-      - "9092:9092"
-      - "9644:9644"
-    command:
-      - redpanda start
-      - --smp 1
-      - --memory 1G
-      - --overprovisioned
-      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:9092
-
-  # --- Caching & Hot Storage ---
-  redis:
-    image: redis:7.2-alpine
-    container_name: rewearit-redis
-    ports:
-      - "6379:6379"
-
-  # --- Object Storage (S3 Emulation) ---
-  minio:
-    image: minio/minio:RELEASE.2024-05-01T01-11-10Z
-    container_name: rewearit-minio
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadminpassword
-    command: server /data --console-address ":9001"
-
-  # --- Databases ---
-  postgres-catalog:
-    image: pgvector/pgvector:pg16
-    container_name: rewearit-postgres-catalog
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_DB: catalog_db
-      POSTGRES_USER: catalog_user
-      POSTGRES_PASSWORD: catalog_password
-
-  postgres-orders:
-    image: postgres:16-alpine
-    container_name: rewearit-postgres-orders
-    ports:
-      - "5433:5432"
-    environment:
-      POSTGRES_DB: orders_db
-      POSTGRES_USER: orders_user
-      POSTGRES_PASSWORD: orders_password
-
-  postgres-pricing:
-    image: postgres:16-alpine
-    container_name: rewearit-postgres-pricing
-    ports:
-      - "5434:5432"
-    environment:
-      POSTGRES_DB: pricing_db
-      POSTGRES_USER: pricing_user
-      POSTGRES_PASSWORD: pricing_password
+### Booting Local Infrastructure:
+```bash
+cd deploy/docker-compose
+docker compose up -d
 ```
+
+This provisions:
+- **Redpanda (Kafka API)**: `localhost:9092`
+- **Redpanda Console (Topic UI)**: `http://localhost:8080`
+- **Redis (Cache & Distributed Locks)**: `localhost:6379`
+- **MinIO (S3 Object Storage)**: `http://localhost:9000` (Console: `9001`)
+- **PostgreSQL Databases**:
+  - Catalog (`pgvector`): `localhost:5432` (`catalog_db`)
+  - Orders: `localhost:5433` (`orders_db`)
+  - Pricing: `localhost:5434` (`pricing_db`)
 
 ---
 
 ## 2. Kubernetes Architecture (Production & Staging)
 
-### 2.1 Cluster Structure (Namespaces)
+### 2.1 Cluster & Namespace Strategy
+We use **isolated EKS clusters per environment** (`rewearit-dev`, `rewearit-prod`). Within each cluster, workloads are strictly segmented into functional namespaces with dedicated RBAC and NetworkPolicies:
+
 - `rewearit-system`: Ingress controllers (Nginx/Envoy), cert-manager, ExternalDNS.
 - `rewearit-infra`: Kafka/Redpanda clusters, Redis Sentinel, MinIO / CSI storage drivers.
 - `rewearit-services`: Stateless microservice deployments (`gateway`, `catalog`, `order`, `pricing`, `ai-worker`).
-- `rewearit-analytics`: PySpark driver and executor pods.
+- `rewearit-analytics`: PySpark driver and executor pods running batch/streaming analytics.
 - `rewearit-monitoring`: Prometheus, Grafana, OpenTelemetry Collector, Tempo.
 
 ### 2.2 Helm Chart Architecture
@@ -110,9 +62,10 @@ deploy/k8s/
 ## 3. Cloud Infrastructure Blueprint (AWS EKS)
 
 - **VPC & Networking**: Multi-AZ VPC across 3 Availability Zones with public and private subnets, NAT Gateways, and strict Security Groups.
-- **Compute**: Amazon EKS running Kubernetes 1.30+ on managed EC2 node groups (e.g. `m6i.large` for general services, `g5.xlarge` GPU instances for local AI inference if needed).
+- **Compute**: Amazon EKS running Kubernetes 1.30+ on managed EC2 node groups (`m6i.large` for general services, `g5.xlarge` GPU instances for local AI inference if needed).
 - **Managed Data Services**:
   - AWS MSK (Managed Streaming for Apache Kafka) with IAM authentication.
-  - Amazon Aurora Serverless v2 PostgreSQL with automated failover and pgvector.
+  - Amazon Aurora Serverless v2 PostgreSQL with automated failover and `pgvector`.
   - Amazon S3 bucket with lifecycle policies transitioning raw images to Glacier after 90 days.
   - Amazon ElastiCache for Redis (Cluster mode enabled).
+- **GitOps Continuous Delivery**: ArgoCD watching repository release tags and deploying Helm values to EKS namespaces.

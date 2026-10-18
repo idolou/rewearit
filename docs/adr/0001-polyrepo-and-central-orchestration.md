@@ -14,6 +14,12 @@ We chose a **Polyrepo Strategy** anchored by a central architecture and orchestr
 1. The central repository (`rewearit`) houses system design specs, protobuf event contracts, Kubernetes manifests, Helm umbrella charts, Docker Compose files for local mesh execution, and the AI agent knowledge base.
 2. Each microservice and data pipeline component lives in its own dedicated GitHub repository under the `idolou/` namespace.
 
+## Alternatives Considered
+- **Single Monorepo (e.g., Pants / Nx / Turborepo)**:
+  - *Why Rejected*: While convenient for atomic commits and code sharing, monorepos often lead to blurred boundary discipline in Python projects (e.g. accidental cross-service module imports). They also require complex CI path-filtering to avoid running heavyweight PySpark or AI tests on trivial gateway commits.
+- **Pure Polyrepo without Central Orchestrator**:
+  - *Why Rejected*: Fragmented schemas, ad-hoc Docker Compose setups per repo, and lack of an overarching system architecture view. Without a central repo, AI agents and engineers lack a single source of truth for event contracts and end-to-end local testing.
+
 ## Consequences
 ### Positive
 - Strict dependency isolation: Each service maintains its own `pyproject.toml` and Docker image lifecycle.
@@ -22,3 +28,5 @@ We chose a **Polyrepo Strategy** anchored by a central architecture and orchestr
 
 ### Negative / Tradeoffs
 - Cross-repo schema synchronization requires maintaining Protobuf contracts in the central repository and publishing versioned Python client packages.
+- Cross-cutting refactors that span multiple microservices require coordinated pull requests across separate repositories.
+- Local multi-repo development requires cloning sibling repositories and managing multiple git worktrees simultaneously.

@@ -100,9 +100,9 @@ Modern senior and lead engineering roles demand verifiable mastery of distribute
 - **Responsibilities**:
   - CRUD operations on clothing listings (title, brand, size, color, condition, price, seller ID).
   - Synchronous gRPC API for order validation and inventory reservation with a 15-minute reservation TTL.
-  - Consumes `item.ai_appraised` from Kafka to update listing attributes and write visual embeddings to its own PostgreSQL `pgvector` store (preserving database-per-service isolation).
+  - Consumes `AIAppraisalCompletedEvent` (`ai.appraisal_completed`) from Kafka to update listing attributes and write visual embeddings to its own PostgreSQL `pgvector` store (preserving database-per-service isolation).
   - In-process lightweight ONNX/CLIP query embedding generation for interactive real-time visual and semantic search (<30ms latency on CPU), distinguishing fast query embeddings from heavy background VLM appraisals.
-  - Emits: `item.created`, `item.updated`, `item.status_changed` (Available, Reserved, Sold).
+  - Emits: `item.created`, `item.status_changed`.
   - Storage: Dedicated PostgreSQL database with `pgvector` extension.
 
 #### 3. `rewearit-order-service` (Transactions & Escrow)
@@ -111,7 +111,7 @@ Modern senior and lead engineering roles demand verifiable mastery of distribute
   - Initiates synchronous gRPC `ReserveItem` call to `catalog-service` during checkout creation. If successful, creates order in `ESCROW_HELD`.
   - Manages order state machine: `CREATED` -> `ESCROW_HELD` -> `SHIPPED` -> `DELIVERED` -> `COMPLETED` (or `CANCELLED` / `REFUNDED`).
   - Guarantees idempotency via unique client transaction keys stored in Redis.
-  - Emits asynchronous events: `order.created`, `order.escrow_locked`, `order.completed`, `order.cancelled` (which finalize Catalog inventory to `SOLD` or `ACTIVE`).
+  - Emits asynchronous events on `rewearit.orders.events`: `order.placed`, `order.escrow_locked`, `order.completed`, `order.cancelled`, `order.refunded`.
   - Storage: Dedicated PostgreSQL database with strict transactional isolation.
 
 #### 4. `rewearit-pricing-service` (Market Value & Price Discovery)
@@ -130,9 +130,9 @@ Modern senior and lead engineering roles demand verifiable mastery of distribute
   - Invokes vision-language models (e.g. Claude 3.5 Sonnet / GPT-4o / local VLM) to:
     - Detect garment type (e.g. "Vintage Denim Jacket").
     - Recognize brand tags and authenticity indicators.
-    - Grade physical condition (`Brand New`, `Like New`, `Good`, `Fair`, `Damaged`).
+    - Grade physical condition according to `ConditionGrade` (`NEW_WITH_TAGS`, `EXCELLENT`, `VERY_GOOD`, `GOOD`, `FAIR`).
     - Generate 512-dimensional multimodal visual embeddings.
-  - Emits: `item.ai_appraised` containing all parsed metadata and visual embeddings to Kafka (never writing directly to Catalog database).
+  - Emits: `AIAppraisalCompletedEvent` (`ai.appraisal_completed`) on `rewearit.ai.events` containing all parsed metadata and visual embeddings to Kafka (never writing directly to Catalog database).
 
 #### 6. `rewearit-data-pipeline` (Big Data & Streaming Analytics)
 - **Role**: High-throughput distributed data processing using Apache Spark (PySpark).
@@ -166,7 +166,7 @@ All events are formatted with standard envelope metadata and JSON/Avro payloads:
 - Virtual environment caching and minimal runtime image size (< 150MB).
 
 ### 6.2 Kubernetes Deployment Specs
-- **Namespaces**: `rewearit-dev`, `rewearit-prod`.
+- **Cluster & Namespace Strategy**: Dedicated EKS cluster per environment (`rewearit-dev`, `rewearit-prod`). Within each cluster, namespaces are segmented functionally: `rewearit-system` (Ingress/cert-manager), `rewearit-infra` (Kafka/Redis/DBs), `rewearit-services` (Stateless microservices), `rewearit-analytics` (PySpark), and `rewearit-monitoring`.
 - **Deployments**: Stateless FastAPI microservices with readiness and liveness probes (`/healthz`, `/ready`).
 - **Horizontal Pod Autoscaler (HPA)**: CPU and memory-based autoscaling targets (50-80% thresholds).
 - **Stateful Infrastructure**: Kafka/Redpanda, PostgreSQL, Redis, and MinIO managed via Helm charts or dedicated operators.

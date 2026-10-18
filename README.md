@@ -79,7 +79,7 @@ This repository serves as the **central architecture orchestrator, schema reposi
 - **[ADR 0002: 100% Python Unified Stack](./docs/adr/0002-pure-python-stack.md)**
 - **[ADR 0003: Event-Driven Architecture with Kafka & Redpanda](./docs/adr/0003-event-driven-messaging-with-kafka.md)**
 - **[ADR 0004: Asynchronous Multimodal AI & pgvector Ownership](./docs/adr/0004-multimodal-ai-for-listing-intelligence.md)**
-- **[ADR 0005: Kubernetes, GitOps & Local Parity](./docs/adr/0005-kubernetes-and-gitops-deployment.md)**
+- **[ADR 0005: Kubernetes, ArgoCD GitOps & Local Parity](./docs/adr/0005-kubernetes-and-gitops-deployment.md)**
 
 ---
 

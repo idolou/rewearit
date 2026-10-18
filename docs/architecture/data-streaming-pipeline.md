@@ -15,7 +15,7 @@ The `rewearit-data-pipeline` processes two distinct workloads:
                                          ▼
                         ┌─────────────────────────────────┐
                         │ Spark Structured Streaming Core │
-                        │  - Sliding Windows (10 min)     │
+                        │  - Sliding Windows (15 min)     │
                         │  - Watermarking (2 min)         │
                         │  - Anomaly & Fraud Filtering    │
                         └────────┬───────────────┬────────┘
@@ -80,4 +80,4 @@ Partitioned by `sale_year`, `sale_month`:
 ### Batch Output: Brand Depreciation Index
 Spark batch runs daily to calculate the **Resale Retention Percentage (RRP)**:
 $$\text{RRP}_{\text{brand, condition}} = \frac{\sum \text{final\_sale\_price}}{\sum \text{original\_msrp}} \times 100$$
-This metric is published directly to `rewearit-pricing-service` to maintain automated valuation models.
+This metric is published directly to Kafka topic `rewearit.analytics.pricing_metrics` and consumed by `rewearit-pricing-service` to maintain automated valuation models.
