@@ -23,41 +23,138 @@ This repository serves as the **central architecture orchestrator, schema reposi
 
 ## 🏛️ System Architecture Topology
 
-```text
-                           [ External Clients / Web / Mobile ]
-                                            │
-                                   (REST / JSON / JWT)
-                                            ▼
-                             ┌─────────────────────────────┐
-                             │       rewearit-gateway      │
-                             │      (FastAPI / Envoy)      │
-                             └──────────────┬──────────────┘
-                                            │
-                     gRPC Internal Service Mesh (HTTP/2 / Protobuf)
-              ┌─────────────────────────────┼─────────────────────────────┐
-              ▼                             ▼                             ▼
-      ┌───────────────┐             ┌───────────────┐             ┌───────────────┐
-      │catalog-service│             │ order-service │             │pricing-service│
-      │  (Port 50051) │             │  (Port 50052) │             │  (Port 50053) │
-      └───────┬───────┘             └───────┬───────┘             └───────┬───────┘
-              │                             │                             │
-         PostgreSQL                    PostgreSQL                    PostgreSQL
-         + pgvector                     (Orders)                     + Redis Cache
-        (Port 5432)                   (Port 5433)                    (Port 5434 / 6379)
-              │                             │                             │
-              └─────────────────────────────┼─────────────────────────────┘
-                                            │
-                               Kafka Event Bus (Redpanda / MSK)
-                                            │
-              ┌─────────────────────────────┴─────────────────────────────┐
-              ▼                                                           ▼
-      ┌───────────────┐                                           ┌───────────────┐
-      │   ai-worker   │                                           │ data-pipeline │
-      │ (Worker Pool) │                                           │(Spark Cluster)│
-      └───────┬───────┘                                           └───────┬───────┘
-              │                                                           │
-         VLM Engine                                                Parquet Lakehouse
-       (Vision + CLIP)                                              (MinIO / S3)
+```mermaid
+flowchart TD
+    classDef client fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#01579b;
+    classDef gateway fill:#e8eaf6,stroke:#3f51b5,stroke-width:2px,color:#1a237e;
+    classDef service fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#1b5e20;
+    classDef worker fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c;
+    classDef db fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#e65100;
+    classDef stream fill:#ffebee,stroke:#d32f2f,stroke-width:2px,color:#b71c1c;
+    classDef obs fill:#f5f5f5,stroke:#616161,stroke-width:2px,color:#212121;
+
+    subgraph Clients["Clients & Edge Gateway"]
+        web["Web & Mobile Apps"]:::client
+        gateway["rewearit-gateway<br/>FastAPI / Reverse Proxy<br/>Port 8000"]:::gateway
+    end
+
+    subgraph CoreServices["Domain Microservices (Python 3.12 + FastAPI + gRPC)"]
+        catalog["rewearit-catalog-service<br/>REST :8001 | gRPC :50051"]:::service
+        orders["rewearit-order-service<br/>REST :8003 | gRPC :50052"]:::service
+        pricing["rewearit-pricing-service<br/>REST :8004 | gRPC :50053"]:::service
+    end
+
+    subgraph AsyncWorkers["Intelligence & Analytics Workers"]
+        ai_worker["rewearit-ai-worker<br/>Probes :8002<br/>VLM + 512-dim Embeddings"]:::worker
+        data_pipeline["rewearit-data-pipeline<br/>PySpark Streaming & Lakehouse"]:::worker
+    end
+
+    subgraph StorageMesh["Isolated Storage & Caching Layer"]
+        db_catalog[("catalog_db<br/>PostgreSQL 16 + pgvector<br/>Port 5432")]:::db
+        db_orders[("orders_db<br/>PostgreSQL 16<br/>Port 5433")]:::db
+        db_pricing[("pricing_db<br/>PostgreSQL 16<br/>Port 5434")]:::db
+        redis[("Redis 7<br/>Cache & Idempotency<br/>Port 6379")]:::db
+        minio[("MinIO S3 Storage<br/>Garments & Lakehouse<br/>Port 9000/9001")]:::db
+    end
+
+    subgraph KafkaMesh["Event Streaming Mesh (Redpanda / Kafka API :9092)"]
+        t_items[["rewearit.items.events"]]:::stream
+        t_ai[["rewearit.ai.events"]]:::stream
+        t_orders[["rewearit.orders.events"]]:::stream
+        t_pricing[["rewearit.pricing.events"]]:::stream
+    end
+
+    subgraph ObservabilityMesh["Distributed Visibility & Tracing"]
+        jaeger["Jaeger Distributed Tracing<br/>UI :16686 | OTLP :4317/:4318"]:::obs
+        console["Redpanda Console<br/>Kafka UI :8080"]:::obs
+    end
+
+    %% Client and Gateway Routing
+    web -->|"REST / HTTPS"| gateway
+    gateway -->|"HTTP / REST"| catalog
+    gateway -->|"HTTP / REST"| orders
+    gateway -->|"HTTP / REST"| pricing
+
+    %% Synchronous Inter-Service gRPC Mesh
+    orders -->|"gRPC ReserveItem<br/>(Atomic 1-of-1 Lock)"| catalog
+    orders -->|"gRPC GetValuation"| pricing
+
+    %% Service Database Ownership (Strict Domain Boundaries)
+    catalog -->|"Read / Write"| db_catalog
+    orders -->|"Read / Write"| db_orders
+    pricing -->|"Read / Write"| db_pricing
+
+    %% Caching & Shared Objects
+    catalog -.->|"Cache Embedding"| redis
+    orders -.->|"Idempotency-Key Lock"| redis
+    ai_worker -.->|"SHA-256 Appraisal Cache"| redis
+    ai_worker -->|"Fetch Garment Photos"| minio
+    data_pipeline -->|"Parquet Lakehouse"| minio
+
+    %% Event Streaming Mesh (Pub/Sub)
+    catalog -->|"item.created"| t_items
+    t_items -->|"Consume"| ai_worker
+    ai_worker -->|"ai.appraisal_completed"| t_ai
+    t_ai -->|"Activate & Embed"| catalog
+    t_ai -->|"Valuation Baseline"| pricing
+
+    orders -->|"order.placed<br/>order.completed"| t_orders
+    t_orders -->|"Mark Item SOLD"| catalog
+    t_orders -->|"Sales Velocity"| data_pipeline
+
+    %% Distributed Tracing
+    catalog -.->|"OTLP Spans"| jaeger
+    orders -.->|"OTLP Spans"| jaeger
+    ai_worker -.->|"OTLP Spans"| jaeger
+    pricing -.->|"OTLP Spans"| jaeger
+```
+
+---
+
+## ⚡ 1-of-1 Secondhand Garment Reservation & Escrow Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Buyer
+    participant Gateway as rewearit-gateway
+    participant OrderSvc as rewearit-order-service
+    participant Redis as Redis (Idempotency)
+    participant CatalogSvc as rewearit-catalog-service
+    participant CatalogDB as catalog_db (PostgreSQL)
+    participant Kafka as Redpanda (Kafka)
+    participant AIWorker as rewearit-ai-worker
+
+    Note over Buyer, AIWorker: Phase 1: Listing Creation & AI Appraisal
+    Buyer->>CatalogSvc: POST /api/v1/items (Listing with Photo URL)
+    CatalogSvc->>CatalogDB: INSERT item (Status: ANALYZING)
+    CatalogSvc->>Kafka: Publish item.created (rewearit.items.events)
+    Kafka->>AIWorker: Consume item.created
+    AIWorker->>AIWorker: Strip EXIF, VLM Appraisal, 512-dim Embedding
+    AIWorker->>Kafka: Publish ai.appraisal_completed (rewearit.ai.events)
+    Kafka->>CatalogSvc: Consume ai.appraisal_completed
+    CatalogSvc->>CatalogDB: UPDATE item SET status='ACTIVE', embedding=vec, condition='GOOD'
+
+    Note over Buyer, AIWorker: Phase 2: Atomic Checkout & 1-of-1 Garment Reservation
+    Buyer->>Gateway: POST /api/v1/orders (Idempotency-Key, item_id)
+    Gateway->>OrderSvc: Forward Checkout Request
+    OrderSvc->>Redis: SETNX idempotency:order:<key> (Lock)
+    OrderSvc->>CatalogSvc: gRPC ReserveItem(item_id, order_id, ttl=900s)
+    CatalogSvc->>CatalogDB: SELECT ... FOR UPDATE WHERE id=item_id AND status='ACTIVE'
+    alt Item Available
+        CatalogDB-->>CatalogSvc: Row Locked (1-of-1 Available)
+        CatalogSvc->>CatalogDB: UPDATE item SET status='RESERVED', order_id=order_id
+        CatalogSvc-->>OrderSvc: ReserveItemResponse(success=True)
+        OrderSvc->>OrderSvc: Transition Order Status to ESCROW_HELD
+        OrderSvc->>Kafka: Publish order.placed & order.escrow_locked (rewearit.orders.events)
+        OrderSvc-->>Gateway: 201 Created (Order in ESCROW_HELD)
+        Gateway-->>Buyer: 201 Order Confirmed (Escrow Secured)
+    else Item Already Reserved or Sold (Race Condition)
+        CatalogDB-->>CatalogSvc: Row Unavailable / Reserved
+        CatalogSvc-->>OrderSvc: ReserveItemResponse(success=False, error="ALREADY_RESERVED")
+        OrderSvc-->>Gateway: 409 Conflict ("Garment already reserved")
+        Gateway-->>Buyer: 409 Conflict
+    end
 ```
 
 ---
