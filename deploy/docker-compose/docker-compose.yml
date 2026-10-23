@@ -150,3 +150,59 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  # -------------------------------------------------------------
+  # Application Microservices & Asynchronous Workers
+  # -------------------------------------------------------------
+  catalog-service:
+    image: rewearit-catalog-service:local
+    container_name: rewearit-catalog-service
+    networks:
+      - rewearit-mesh
+    ports:
+      - "8001:8001"
+      - "50051:50051"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://catalog_user:catalog_password@postgres-catalog:5432/catalog_db
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      REDIS_URL: redis://redis:6379/0
+      PORT: 8001
+      GRPC_PORT: 50051
+    depends_on:
+      postgres-catalog:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8001/healthz\")' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ai-worker:
+    image: rewearit-ai-worker:local
+    container_name: rewearit-ai-worker
+    networks:
+      - rewearit-mesh
+    ports:
+      - "8002:8002"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT: http://minio:9000
+      HEALTH_PORT: 8002
+      VLM_PROVIDER: heuristic
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8002/healthz\")' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
