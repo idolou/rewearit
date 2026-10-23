@@ -37,14 +37,14 @@
 - Test: `/Users/idonewold/IDO/Projects/rewearit-ai-worker/tests/unit/test_config.py`
 - Test: `/Users/idonewold/IDO/Projects/rewearit-ai-worker/tests/unit/test_health.py`
 
-- [ ] Initialize git repo at `/Users/idonewold/IDO/Projects/rewearit-ai-worker`.
-- [ ] Define `pyproject.toml` with `uv` dependencies: `aiokafka`, `redis`, `pillow`, `pydantic-settings`, `httpx`, `fastapi`, `uvicorn`, `protobuf`, `pytest`, `pytest-asyncio`, `ruff`, `mypy`.
-- [ ] Implement `Settings` loading `KAFKA_BOOTSTRAP_SERVERS`, `REDIS_URL`, `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `VLM_PROVIDER`, `HEALTH_PORT=8002`.
-- [ ] Implement lightweight FastAPI probe server on `HEALTH_PORT` providing `/healthz` and `/ready`.
-- [ ] Build multi-stage `Dockerfile` with `ghcr.io/astral-sh/uv:latest` and non-root `appuser`.
-- [ ] Write unit tests verifying config defaults and health endpoints.
-- [ ] Run `ruff check`, `mypy`, and `pytest`.
-- [ ] Commit: `feat(worker): scaffold rewearit-ai-worker with uv and health server`.
+- [x] Initialize git repo at `/Users/idonewold/IDO/Projects/rewearit-ai-worker`.
+- [x] Define `pyproject.toml` with `uv` dependencies: `aiokafka`, `redis`, `pillow`, `pydantic-settings`, `httpx`, `fastapi`, `uvicorn`, `protobuf`, `pytest`, `pytest-asyncio`, `ruff`, `mypy`.
+- [x] Implement `Settings` loading `KAFKA_BOOTSTRAP_SERVERS`, `REDIS_URL`, `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `VLM_PROVIDER`, `HEALTH_PORT=8002`.
+- [x] Implement lightweight FastAPI probe server on `HEALTH_PORT` providing `/healthz` and `/ready`.
+- [x] Build multi-stage `Dockerfile` with `ghcr.io/astral-sh/uv:latest` and non-root `appuser`.
+- [x] Write unit tests verifying config defaults and health endpoints.
+- [x] Run `ruff check`, `mypy`, and `pytest`.
+- [x] Commit: `feat(worker): scaffold rewearit-ai-worker with uv and health server`.
 
 ---
 
@@ -57,11 +57,11 @@
 - Copy/Compile: Protobuf stubs `events_pb2.py` from central schema.
 - Test: `/Users/idonewold/IDO/Projects/rewearit-ai-worker/tests/unit/test_events_serialization.py`
 
-- [ ] Compile or bundle `events_pb2.py` matching `rewearit/docs/schemas/events.proto`.
-- [ ] Implement `AIEventProducer` publishing `AIAppraisalCompletedEvent` to `rewearit.ai.events` with standard `EventHeader`.
-- [ ] Implement `ItemEventConsumer` subscribing to `rewearit.items.events` (group `cg-ai-worker`).
-- [ ] Write unit test verifying serialization/deserialization of `ItemCreatedEvent` and `AIAppraisalCompletedEvent`.
-- [ ] Commit: `feat(worker): implement protobuf event envelope and kafka producer/consumer`.
+- [x] Compile or bundle `events_pb2.py` matching `rewearit/docs/schemas/events.proto`.
+- [x] Implement `AIEventProducer` publishing `AIAppraisalCompletedEvent` to `rewearit.ai.events` with standard `EventHeader`.
+- [x] Implement `ItemEventConsumer` subscribing to `rewearit.items.events` (group `cg-ai-worker`).
+- [x] Write unit test verifying serialization/deserialization of `ItemCreatedEvent` and `AIAppraisalCompletedEvent`.
+- [x] Commit: `feat(worker): implement protobuf event envelope and kafka producer/consumer`.
 
 ---
 
@@ -73,10 +73,10 @@
 - Test: `/Users/idonewold/IDO/Projects/rewearit-ai-worker/tests/unit/test_preprocessor.py`
 - Test: `/Users/idonewold/IDO/Projects/rewearit-ai-worker/tests/unit/test_cache.py`
 
-- [ ] Implement `ImagePreprocessor`: fetches image bytes from S3/MinIO or HTTP URL, strips EXIF metadata, resizes to standard 1024x1024 or converts to WebP, and calculates SHA-256 hash.
-- [ ] Implement `AppraisalCache`: Redis-backed caching keyed by `ai:appraisal:<sha256>` with TTL to prevent redundant VLM and embedding calls.
-- [ ] Write unit tests verifying EXIF stripping, hashing, and cache hits/misses with mock Redis.
-- [ ] Commit: `feat(worker): implement image preprocessor and sha-256 redis caching`.
+- [x] Implement `ImagePreprocessor`: fetches image bytes from S3/MinIO or HTTP URL, strips EXIF metadata, resizes to standard 1024x1024 or converts to WebP, and calculates SHA-256 hash.
+- [x] Implement `AppraisalCache`: Redis-backed caching keyed by `ai:appraisal:<sha256>` with TTL to prevent redundant VLM and embedding calls.
+- [x] Write unit tests verifying EXIF stripping, hashing, and cache hits/misses with mock Redis.
+- [x] Commit: `feat(worker): implement image preprocessor and sha-256 redis caching`.
 
 ---
 
@@ -91,12 +91,12 @@
 - Test: `/Users/idonewold/IDO/Projects/rewearit-ai-worker/tests/unit/test_vlm.py`
 - Test: `/Users/idonewold/IDO/Projects/rewearit-ai-worker/tests/unit/test_embeddings.py`
 
-- [ ] Define `VLMClient` protocol returning `VLMAppraisalResult` (brand, category, condition grade, confidence, tags, suggested min/max price).
-- [ ] Implement `HeuristicVLMClient` resilient fallback parser (uses title, description, and image heuristic features for deterministic offline execution).
-- [ ] Implement `GeminiVLMClient` for Google Gemini vision API with structured output schema.
-- [ ] Implement `EmbeddingEncoder`: produces 512-dimensional L2-normalized float vectors (norm == 1.0) suitable for cosine distance in `pgvector`.
-- [ ] Write unit tests verifying 512-dim length, L2-norm == 1.000, and condition grading mapping.
-- [ ] Commit: `feat(worker): implement vlm attribute extraction and 512-dim embedding encoder`.
+- [x] Define `VLMClient` protocol returning `VLMAppraisalResult` (brand, category, condition grade, confidence, tags, suggested min/max price).
+- [x] Implement `HeuristicVLMClient` resilient fallback parser (uses title, description, and image heuristic features for deterministic offline execution).
+- [x] Implement `GeminiVLMClient` for Google Gemini vision API with structured output schema.
+- [x] Implement `EmbeddingEncoder`: produces 512-dimensional L2-normalized float vectors (norm == 1.0) suitable for cosine distance in `pgvector`.
+- [x] Write unit tests verifying 512-dim length, L2-norm == 1.000, and condition grading mapping.
+- [x] Commit: `feat(worker): implement vlm attribute extraction and 512-dim embedding encoder`.
 
 ---
 
@@ -108,10 +108,10 @@
 - Test: `/Users/idonewold/IDO/Projects/rewearit-ai-worker/tests/unit/test_worker.py`
 - Test: `/Users/idonewold/IDO/Projects/rewearit-ai-worker/tests/integration/test_worker_pipeline.py`
 
-- [ ] Implement `AIAppraisalWorker`: orchestrates receiving `ItemCreatedEvent`, checking cache, invoking preprocessor, VLM, and embedding encoder, caching result, and emitting `AIAppraisalCompletedEvent`.
-- [ ] Implement graceful startup and shutdown hooks handling SIGTERM/SIGINT.
-- [ ] Write unit and integration tests simulating an incoming `ItemCreatedEvent` and asserting an `AIAppraisalCompletedEvent` is emitted.
-- [ ] Commit: `feat(worker): implement full worker lifecycle and pipeline orchestration`.
+- [x] Implement `AIAppraisalWorker`: orchestrates receiving `ItemCreatedEvent`, checking cache, invoking preprocessor, VLM, and embedding encoder, caching result, and emitting `AIAppraisalCompletedEvent`.
+- [x] Implement graceful startup and shutdown hooks handling SIGTERM/SIGINT.
+- [x] Write unit and integration tests simulating an incoming `ItemCreatedEvent` and asserting an `AIAppraisalCompletedEvent` is emitted.
+- [x] Commit: `feat(worker): implement full worker lifecycle and pipeline orchestration`.
 
 ---
 
@@ -121,7 +121,7 @@
 - Modify: `rewearit/deploy/docker-compose/docker-compose.yml` (add `catalog-service` and `ai-worker` services)
 - Test: Live end-to-end event loop: Item Created -> AI Appraisal Emitted -> Catalog Item Updated to ACTIVE with embedding.
 
-- [ ] Lock dependencies with `uv lock` in `rewearit-ai-worker`.
-- [ ] Build Docker image `rewearit-ai-worker:local`.
-- [ ] Test the live pipeline: Create item via Catalog Service -> AI Worker picks it up -> AI Worker generates 512-dim vector & condition -> Catalog Service consumes appraisal and activates item in `catalog_db` with pgvector embedding.
-- [ ] Commit: `test(worker): verify end-to-end multimodal pipeline with catalog service`.
+- [x] Lock dependencies with `uv lock` in `rewearit-ai-worker`.
+- [x] Build Docker image `rewearit-ai-worker:local`.
+- [x] Test the live pipeline: Create item via Catalog Service -> AI Worker picks it up -> AI Worker generates 512-dim vector & condition -> Catalog Service consumes appraisal and activates item in `catalog_db` with pgvector embedding.
+- [x] Commit: `test(worker): verify end-to-end multimodal pipeline with catalog service`.
