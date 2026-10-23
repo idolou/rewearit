@@ -17,15 +17,15 @@
 **Files:**
 - Modify: `rewearit/README.md`
 
-- [ ] Add a comprehensive Mermaid `graph TD` system architecture diagram displaying:
+- [x] Add a comprehensive Mermaid `graph TD` system architecture diagram displaying:
   - External clients / Gateway (FastAPI)
   - Core Services: `rewearit-catalog-service` (:8001 / :50051), `rewearit-order-service` (:8003 / :50052), `rewearit-ai-worker` (:8002)
   - Databases: `catalog_db` (pgvector 5432), `orders_db` (5433), `pricing_db` (5434), Redis (6379), MinIO (9000)
   - Messaging Mesh: Redpanda Kafka topics (`rewearit.items.events`, `rewearit.ai.events`, `rewearit.orders.events`)
   - Observability Mesh: Jaeger UI (:16686), OTLP Collector (:4317/:4318), Redpanda Console (:8080)
-- [ ] Add a Mermaid `sequenceDiagram` showing the end-to-end checkout & reservation flow:
+- [x] Add a Mermaid `sequenceDiagram` showing the end-to-end checkout & reservation flow:
   `Buyer -> Gateway -> Order Service -> [gRPC ReserveItem] -> Catalog Service (pgvector lock) -> Escrow Held -> Kafka Event`
-- [ ] Commit: `docs(readme): add rich mermaid architecture and order flow diagrams`.
+- [x] Commit: `docs(readme): add rich mermaid architecture and order flow diagrams`.
 
 ---
 
@@ -33,14 +33,14 @@
 **Files:**
 - Modify: `rewearit/deploy/docker-compose/docker-compose.yml`
 
-- [ ] Add `jaeger` service (`jaegertracing/all-in-one:1.57`) to `docker-compose.yml`:
+- [x] Add `jaeger` service (`jaegertracing/all-in-one:1.57`) to `docker-compose.yml`:
   - Ports: `16686:16686` (Web UI), `4317:4317` (OTLP gRPC), `4318:4318` (OTLP HTTP).
   - Connected to `rewearit-mesh`.
-- [ ] Add OpenTelemetry environment variables to existing services in `docker-compose.yml`:
+- [x] Add OpenTelemetry environment variables to existing services in `docker-compose.yml`:
   - `OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317`
   - `OTEL_SERVICE_NAME`
-- [ ] Launch Jaeger and verify UI is responsive at `http://localhost:16686`.
-- [ ] Commit: `feat(infra): add jaeger and otlp tracing infrastructure to compose`.
+- [x] Launch Jaeger and verify UI is responsive at `http://localhost:16686`.
+- [x] Commit: `feat(infra): add jaeger and otlp tracing infrastructure to compose`.
 
 ---
 
@@ -50,10 +50,10 @@
 - Modify: `rewearit-catalog-service` to include `opentelemetry-sdk`, `opentelemetry-instrumentation-fastapi`, `opentelemetry-exporter-otlp`
 - Modify: `rewearit-ai-worker` to include OTel trace instrumentation on Kafka message processing
 
-- [ ] Implement standardized OTel tracer configuration helper with automatic span creation.
-- [ ] Implement Kafka trace context carrier injector/extractor for distributed trace propagation across asynchronous event queues.
-- [ ] Verify spans appear in Jaeger for `catalog-service` and `ai-worker`.
-- [ ] Commit: `feat(tracing): implement distributed otel tracing across catalog and ai-worker`.
+- [x] Implement standardized OTel tracer configuration helper with automatic span creation.
+- [x] Implement Kafka trace context carrier injector/extractor for distributed trace propagation across asynchronous event queues.
+- [x] Verify spans appear in Jaeger for `catalog-service` and `ai-worker`.
+- [x] Commit: `feat(tracing): implement distributed otel tracing across catalog and ai-worker`.
 
 ---
 
@@ -67,11 +67,11 @@
 - Create: `/Users/idonewold/IDO/Projects/rewearit-order-service/app/models/order.py`
 - Test: `/Users/idonewold/IDO/Projects/rewearit-order-service/tests/unit/test_order_models.py`
 
-- [ ] Initialize git repo at `/Users/idonewold/IDO/Projects/rewearit-order-service`.
-- [ ] Configure `pyproject.toml` with `uv`: `fastapi`, `uvicorn`, `sqlmodel`, `asyncpg`, `aiokafka`, `redis`, `grpcio`, `opentelemetry-sdk`, `pydantic-settings`, `pytest`.
-- [ ] Define `Order` SQLModel with `OrderStatus` enum (`CREATED`, `ESCROW_HELD`, `SHIPPED`, `DELIVERED`, `COMPLETED`, `CANCELLED`, `REFUNDED`), `total_amount_units`, `currency`, `idempotency_key`.
-- [ ] Write unit tests verifying model validation, state transitions, and database table creation.
-- [ ] Commit: `feat(orders): scaffold rewearit-order-service and domain models with uv`.
+- [x] Initialize git repo at `/Users/idonewold/IDO/Projects/rewearit-order-service`.
+- [x] Configure `pyproject.toml` with `uv`: `fastapi`, `uvicorn`, `sqlmodel`, `asyncpg`, `aiokafka`, `redis`, `grpcio`, `opentelemetry-sdk`, `pydantic-settings`, `pytest`.
+- [x] Define `Order` SQLModel with `OrderStatus` enum (`CREATED`, `ESCROW_HELD`, `SHIPPED`, `DELIVERED`, `COMPLETED`, `CANCELLED`, `REFUNDED`), `total_amount_units`, `currency`, `idempotency_key`.
+- [x] Write unit tests verifying model validation, state transitions, and database table creation.
+- [x] Commit: `feat(orders): scaffold rewearit-order-service and domain models with uv`.
 
 ---
 
@@ -83,16 +83,16 @@
 - Create: `/Users/idonewold/IDO/Projects/rewearit-order-service/app/events/producer.py`
 - Test: `/Users/idonewold/IDO/Projects/rewearit-order-service/tests/unit/test_order_service.py`
 
-- [ ] Implement `CatalogGrpcClient`: invokes `ReserveItem(item_id, order_id, reservation_timeout_seconds=900)` on `rewearit-catalog-service:50051`.
-- [ ] Implement `IdempotencyManager` using Redis with atomic `SET NX EX`.
-- [ ] Implement `OrderService.create_order`:
+- [x] Implement `CatalogGrpcClient`: invokes `ReserveItem(item_id, order_id, reservation_timeout_seconds=900)` on `rewearit-catalog-service:50051`.
+- [x] Implement `IdempotencyManager` using Redis with atomic `SET NX EX`.
+- [x] Implement `OrderService.create_order`:
   - Validates `Idempotency-Key`.
   - Invokes `CatalogGrpcClient.reserve_item(item_id, order_id)`.
   - If reservation succeeds: creates order in `ESCROW_HELD`, commits to `orders_db`, and publishes `order.placed` & `order.escrow_locked` to `rewearit.orders.events`.
   - If reservation fails (item already reserved/sold): raises 409 Conflict.
-- [ ] Implement state transition endpoints (`ship_order`, `complete_order`, `cancel_order`).
-- [ ] Write unit tests with mocked gRPC client and Redis.
-- [ ] Commit: `feat(orders): implement gRPC catalog reservation, redis idempotency, and state machine`.
+- [x] Implement state transition endpoints (`ship_order`, `complete_order`, `cancel_order`).
+- [x] Write unit tests with mocked gRPC client and Redis.
+- [x] Commit: `feat(orders): implement gRPC catalog reservation, redis idempotency, and state machine`.
 
 ---
 
@@ -103,12 +103,12 @@
 - Modify: `rewearit/deploy/docker-compose/docker-compose.yml` (add `order-service` on port 8003)
 - Test: End-to-end checkout flow & distributed trace verification in Jaeger
 
-- [ ] Build Docker image `rewearit-order-service:local` with `uv`.
-- [ ] Launch `order-service` in `docker-compose`.
-- [ ] Execute live end-to-end test:
+- [x] Build Docker image `rewearit-order-service:local` with `uv`.
+- [x] Launch `order-service` in `docker-compose`.
+- [x] Execute live end-to-end test:
   1. Create garment in `catalog-service` -> `ai-worker` appraises and activates it.
   2. Create order in `order-service` with `Idempotency-Key` -> `order-service` calls `catalog-service` via gRPC to reserve item -> item becomes `RESERVED` in catalog.
   3. Attempt duplicate order for same item -> 409 Conflict (item already reserved).
   4. Complete order in `order-service` -> `order.completed` published -> `catalog-service` consumes event and marks item as `SOLD`!
   5. Inspect distributed trace in Jaeger UI (`http://localhost:16686`) covering HTTP -> gRPC -> Kafka -> Database!
-- [ ] Commit: `test(orders): verify live checkout, atomic gRPC reservation, and distributed tracing`.
+- [x] Commit: `test(orders): verify live checkout, atomic gRPC reservation, and distributed tracing`.
