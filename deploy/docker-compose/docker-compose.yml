@@ -236,3 +236,36 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  order-service:
+    image: rewearit-order-service:local
+    container_name: rewearit-order-service
+    networks:
+      - rewearit-mesh
+    ports:
+      - "8003:8003"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://orders_user:orders_password@postgres-orders:5432/orders_db
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      REDIS_URL: redis://redis:6379/0
+      CATALOG_GRPC_TARGET: catalog-service:50051
+      REST_PORT: 8003
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_SERVICE_NAME: rewearit-order-service
+    depends_on:
+      postgres-orders:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_healthy
+      catalog-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8003/healthz\")' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
