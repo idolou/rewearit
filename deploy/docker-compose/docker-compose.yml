@@ -152,6 +152,26 @@ services:
       retries: 5
 
   # -------------------------------------------------------------
+  # Distributed Observability & Tracing (Jaeger / OpenTelemetry)
+  # -------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    container_name: rewearit-jaeger
+    networks:
+      - rewearit-mesh
+    ports:
+      - "16686:16686" # Web UI
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:16686/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------------
   # Application Microservices & Asynchronous Workers
   # -------------------------------------------------------------
   catalog-service:
@@ -168,12 +188,17 @@ services:
       REDIS_URL: redis://redis:6379/0
       PORT: 8001
       GRPC_PORT: 50051
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_SERVICE_NAME: rewearit-catalog-service
     depends_on:
       postgres-catalog:
         condition: service_healthy
       redpanda:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      jaeger:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8001/healthz\")' || exit 1"]
@@ -194,12 +219,17 @@ services:
       S3_ENDPOINT: http://minio:9000
       HEALTH_PORT: 8002
       VLM_PROVIDER: heuristic
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_SERVICE_NAME: rewearit-ai-worker
     depends_on:
       redpanda:
         condition: service_healthy
       redis:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      jaeger:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8002/healthz\")' || exit 1"]
