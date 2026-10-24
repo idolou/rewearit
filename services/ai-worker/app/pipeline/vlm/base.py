@@ -12,7 +12,12 @@ class VLMAppraisalResult(BaseModel):
     )
     condition_confidence: float = Field(ge=0.0, le=1.0, description="Confidence score for the condition grade")
     detected_attributes: list[str] = Field(default_factory=list, description="Descriptive style and material tags")
+    suggested_title: str = Field(default="", description="Generated descriptive listing title")
+    detected_color: str = Field(default="Unknown", description="Dominant or detected garment color")
+    detected_size: str = Field(default="M", description="Detected or standard apparel size")
+    detected_material: str = Field(default="Cotton Blend", description="Detected fabric or composition")
     suggested_min_price: int = Field(ge=0, description="Suggested fair market lower price bound in whole units")
+    suggested_target_price: int = Field(default=0, ge=0, description="Suggested fair market target price in whole units")
     suggested_max_price: int = Field(ge=0, description="Suggested fair market upper price bound in whole units")
 
 
