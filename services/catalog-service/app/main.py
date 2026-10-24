@@ -1,10 +1,12 @@
 """FastAPI application entrypoint for ReWearIt Catalog Service."""
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from sqlalchemy import text
 
 from app.api.v1 import api_v1_router
@@ -80,6 +82,15 @@ app.add_middleware(
 )
 
 app.include_router(api_v1_router)
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+@app.get("/upload", include_in_schema=False)
+async def upload_page() -> FileResponse:
+    """Interactive seller studio upload and preview page."""
+    return FileResponse(STATIC_DIR / "upload_preview.html", media_type="text/html")
+
 
 
 @app.get("/healthz", status_code=status.HTTP_200_OK, tags=["Health"])

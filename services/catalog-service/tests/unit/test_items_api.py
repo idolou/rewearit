@@ -74,3 +74,56 @@ async def test_visual_search_validation_fails_on_wrong_dimensions() -> None:
             json={"embedding": invalid_embedding, "limit": 5},
         )
         assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_classify_item_proxy_endpoint() -> None:
+    mock_ai_response = {
+        "clean_image_url": "http://localhost:9000/rewearit-garments/clean/sample.jpg",
+        "original_image_url": "http://localhost:9000/rewearit-garments/raw/sample.jpg",
+        "auto_fill": {
+            "title": "Vintage Levi's Blue Denim Trucker Jacket",
+            "category": "Outerwear",
+            "brand": "Levi's",
+            "size": "L",
+            "color": "Blue",
+            "material": "Denim",
+            "condition_grade": "VERY_GOOD",
+            "confidence": 0.88,
+            "detected_attributes": ["vintage", "denim"],
+        },
+        "suggested_price_range": {
+            "min_price": 50,
+            "target_price": 65,
+            "max_price": 85,
+        },
+    }
+
+    with patch("httpx.AsyncClient.post") as mock_post:
+        mock_resp = AsyncMock()
+        mock_resp.status_code = 200
+        mock_resp.json = lambda: mock_ai_response
+        mock_resp.raise_for_status = lambda: None
+        mock_post.return_value = mock_resp
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            files = {"file": ("test.jpg", b"fake_jpeg_content", "image/jpeg")}
+            response = await client.post("/api/v1/items/classify", files=files)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["clean_image_url"] == mock_ai_response["clean_image_url"]
+            assert data["auto_fill"]["brand"] == "Levi's"
+            assert data["auto_fill"]["color"] == "Blue"
+            assert data["suggested_price_range"]["target_price"] == 65
+
+
+@pytest.mark.asyncio
+async def test_upload_preview_page() -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/upload")
+        assert response.status_code == 200
+        assert "text/html" in response.headers.get("content-type", "")
+        assert "Studio Catalog Frame" in response.text or "ReWearIt" in response.text
+

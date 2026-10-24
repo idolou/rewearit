@@ -1,15 +1,50 @@
 """FastAPI router for apparel catalog items and visual search."""
 import uuid
+from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+import httpx
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_session
 from app.models.item import ConditionGrade, Item, ItemBase, ItemStatus
 from app.services.catalog_service import CatalogService
 
 router = APIRouter(prefix="/items", tags=["Catalog Items"])
+
+
+@router.post("/classify")
+async def classify_item(request: Request) -> dict[str, Any]:
+    """Proxy image upload to ai-worker for studio background removal and auto-fill."""
+    content_type = request.headers.get("content-type", "")
+    target_url = f"{settings.AI_WORKER_URL}/api/v1/classify"
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            if "multipart/form-data" in content_type:
+                form = await request.form()
+                files = {}
+                data = {}
+                for k, v in form.items():
+                    if hasattr(v, "read"):
+                        file_bytes = await v.read()
+                        files[k] = (v.filename or "upload.jpg", file_bytes, v.content_type or "image/jpeg")
+                    else:
+                        data[k] = str(v)
+                resp = await client.post(target_url, files=files, data=data)
+            else:
+                body = await request.json()
+                resp = await client.post(target_url, json=body)
+
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=f"AI Worker error: {e.response.text}")
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Could not reach AI Worker at {target_url}: {e}")
+
 
 
 class VisualSearchRequest(BaseModel):

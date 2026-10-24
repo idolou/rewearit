@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ReWearIt — AI Seller Studio & Catalog Intake</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --primary: #38bdf8;
+      --primary-hover: #0ea5e9;
+      --accent: #10b981;
+      --accent-soft: rgba(16, 185, 129, 0.15);
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --danger: #ef4444;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    header h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    header p {
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      font-size: 1rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
+
+    /* Drop Zone */
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 3rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--primary);
+      background: rgba(56, 189, 248, 0.05);
+    }
+    .dropzone svg {
+      width: 48px;
+      height: 48px;
+      fill: none;
+      stroke: var(--primary);
+      stroke-width: 1.5;
+      margin-bottom: 1rem;
+    }
+    .dropzone p { color: var(--text-muted); font-size: 0.95rem; }
+    .dropzone strong { color: var(--text); }
+    .file-input { display: none; }
+
+    .sample-btn {
+      margin-top: 1rem;
+      background: #334155;
+      color: var(--text);
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .sample-btn:hover { background: #475569; }
+
+    /* Spinner */
+    .spinner-wrap {
+      display: none;
+      text-align: center;
+      padding: 2.5rem 0;
+    }
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Visual Comparison */
+    .studio-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 720px) {
+      .studio-grid { grid-template-columns: 1fr; }
+    }
+    .img-box {
+      background: #0b0f19;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .img-box-header {
+      padding: 0.75rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .badge-ai {
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 0.2rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .img-container {
+      height: 320px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #ffffff;
+      padding: 0.5rem;
+    }
+    .img-container.original-bg {
+      background: #182234;
+    }
+    .img-container img {
+      max-height: 100%;
+      max-width: 100%;
+      object-fit: contain;
+    }
+
+    /* Form Grid */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.25rem;
+    }
+    .col-span-2 { grid-column: span 2; }
+    @media (max-width: 640px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .col-span-2 { grid-column: span 1; }
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+    .form-control {
+      width: 100%;
+      background: #0b0f19;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.7rem 0.9rem;
+      color: var(--text);
+      font-size: 0.95rem;
+      transition: border-color 0.2s;
+    }
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    /* Pricing Section */
+    .pricing-card {
+      background: linear-gradient(180deg, #1e293b 0%, #151e2e 100%);
+      border: 1px solid #38bdf840;
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-top: 1rem;
+    }
+    .price-range-chips {
+      display: flex;
+      gap: 0.75rem;
+      margin: 0.75rem 0 1.25rem;
+      flex-wrap: wrap;
+    }
+    .price-chip {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.6rem 1rem;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .price-chip span {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    .price-chip strong {
+      font-size: 1.15rem;
+      color: var(--text);
+      margin-top: 0.1rem;
+    }
+    .price-chip:hover, .price-chip.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .price-chip.active strong {
+      color: var(--accent);
+    }
+
+    .publish-btn {
+      width: 100%;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      padding: 1rem;
+      font-size: 1.05rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+      margin-top: 1rem;
+    }
+    .publish-btn:hover { opacity: 0.95; }
+    .publish-btn:active { transform: scale(0.99); }
+
+    /* Success Toast */
+    .result-alert {
+      display: none;
+      background: #064e3b;
+      border: 1px solid #10b981;
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-top: 1.5rem;
+      color: #ecfdf5;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>ReWearIt Seller Studio</h1>
+      <p>Instant background removal & studio catalog framing with multimodal attribute pre-fill</p>
+    </header>
+
+    <!-- Upload Card -->
+    <div class="card" id="upload-card">
+      <div class="dropzone" id="dropzone">
+        <svg viewBox="0 0 24 24">
+          <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+        </svg>
+        <p><strong>Click to upload</strong> or drag and drop garment image</p>
+        <p style="margin-top: 0.25rem;">JPG, PNG, or WebP</p>
+        <input type="file" id="file-input" class="file-input" accept="image/*">
+        <div>
+          <button type="button" class="sample-btn" id="sample-btn">Or Click to Load Sample Denim Jacket</button>
+        </div>
+      </div>
+
+      <div class="spinner-wrap" id="spinner-wrap">
+        <div class="spinner"></div>
+        <p><strong>AI Studio at work...</strong></p>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">
+          Stripping background, framing on studio canvas, and classifying garment attributes
+        </p>
+      </div>
+    </div>
+
+    <!-- Review & Form Section (Visible after analysis) -->
+    <div id="review-section" style="display: none;">
+      <!-- Side-by-side Visuals -->
+      <div class="card">
+        <h2 style="font-size: 1.25rem; margin-bottom: 1rem;">1. Visual Studio Enhancement</h2>
+        <div class="studio-grid">
+          <div class="img-box">
+            <div class="img-box-header">Original Upload (Raw)</div>
+            <div class="img-container original-bg">
+              <img id="orig-img" src="" alt="Original Upload">
+            </div>
+          </div>
+          <div class="img-box">
+            <div class="img-box-header">
+              Studio Catalog Frame
+              <span class="badge-ai">Clean Studio Canvas</span>
+            </div>
+            <div class="img-container">
+              <img id="clean-img" src="" alt="Studio Catalog Frame">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Auto-Populated Editable Details -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+          <h2 style="font-size: 1.25rem;">2. Review & Adjust Item Details</h2>
+          <span style="font-size: 0.85rem; color: var(--text-muted);">You can edit any field before publishing</span>
+        </div>
+
+        <form id="listing-form">
+          <div class="form-grid">
+            <div class="form-group col-span-2">
+              <label for="item-title">Listing Title</label>
+              <input type="text" id="item-title" class="form-control" required>
+            </div>
+
+            <div class="form-group">
+              <label for="item-category">Category</label>
+              <select id="item-category" class="form-control" required>
+                <option value="Tops">Tops</option>
+                <option value="Bottoms">Bottoms</option>
+                <option value="Outerwear">Outerwear</option>
+                <option value="Footwear">Footwear</option>
+                <option value="Accessories">Accessories</option>
+                <option value="Dresses">Dresses</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="item-brand">Brand</label>
+              <input type="text" id="item-brand" class="form-control" required>
+            </div>
+
+            <div class="form-group">
+              <label for="item-size">Size</label>
+              <input type="text" id="item-size" class="form-control" required>
+            </div>
+
+            <div class="form-group">
+              <label for="item-color">Color</label>
+              <input type="text" id="item-color" class="form-control">
+            </div>
+
+            <div class="form-group">
+              <label for="item-material">Material</label>
+              <input type="text" id="item-material" class="form-control">
+            </div>
+
+            <div class="form-group">
+              <label for="item-condition">Condition Grade</label>
+              <select id="item-condition" class="form-control" required>
+                <option value="NEW_WITH_TAGS">New With Tags (NWT)</option>
+                <option value="EXCELLENT">Excellent (Like New)</option>
+                <option value="VERY_GOOD">Very Good (Lightly Used)</option>
+                <option value="GOOD">Good (Normal Wear)</option>
+                <option value="FAIR">Fair (Visible Flaws)</option>
+              </select>
+            </div>
+
+            <div class="form-group col-span-2">
+              <label for="item-description">Description</label>
+              <textarea id="item-description" class="form-control" rows="3"></textarea>
+            </div>
+          </div>
+
+          <!-- Pricing Selection -->
+          <div class="pricing-card">
+            <label style="font-size: 0.95rem; font-weight: 700; color: var(--primary);">
+              3. Set Your Listing Price
+            </label>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
+              Fair market valuation estimate based on visual condition, category, and brand. Click a range chip or type your custom price:
+            </p>
+
+            <div class="price-range-chips" id="price-chips">
+              <div class="price-chip" id="chip-min" onclick="selectPrice('min')">
+                <span>Quick Sale (Min)</span>
+                <strong id="val-min">$0</strong>
+              </div>
+              <div class="price-chip active" id="chip-target" onclick="selectPrice('target')">
+                <span>Recommended</span>
+                <strong id="val-target">$0</strong>
+              </div>
+              <div class="price-chip" id="chip-max" onclick="selectPrice('max')">
+                <span>Top Value (Max)</span>
+                <strong id="val-max">$0</strong>
+              </div>
+            </div>
+
+            <div class="form-group" style="max-width: 240px;">
+              <label for="item-price" style="font-weight: 700; color: #ffffff;">Your Final Price ($ USD)</label>
+              <input type="number" id="item-price" class="form-control" min="1" step="1" required style="font-size: 1.25rem; font-weight: 700; color: var(--accent);">
+            </div>
+          </div>
+
+          <button type="submit" class="publish-btn" id="publish-btn">
+            Publish Item to Catalog
+          </button>
+        </form>
+
+        <div class="result-alert" id="result-alert">
+          <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Listing Published Successfully!</h3>
+          <p id="result-detail" style="font-size: 0.95rem;"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentCleanImageUrl = "";
+    let currentOriginalImageUrl = "";
+    let priceGuidance = { min_price: 30, target_price: 50, max_price: 65 };
+
+    const dropzone = document.getElementById("dropzone");
+    const fileInput = document.getElementById("file-input");
+    const spinnerWrap = document.getElementById("spinner-wrap");
+    const reviewSection = document.getElementById("review-section");
+
+    dropzone.addEventListener("click", () => fileInput.click());
+    dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("dragover"); });
+    dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+    dropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropzone.classList.remove("dragover");
+      if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+    });
+
+    fileInput.addEventListener("change", (e) => {
+      if (e.target.files.length > 0) handleFile(e.target.files[0]);
+    });
+
+    document.getElementById("sample-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      loadSampleGarment();
+    });
+
+    function selectPrice(tier) {
+      document.querySelectorAll(".price-chip").forEach(c => c.classList.remove("active"));
+      const chip = document.getElementById("chip-" + tier);
+      if (chip) chip.classList.add("active");
+      
+      const priceInput = document.getElementById("item-price");
+      if (tier === "min") priceInput.value = priceGuidance.min_price;
+      if (tier === "target") priceInput.value = priceGuidance.target_price;
+      if (tier === "max") priceInput.value = priceGuidance.max_price;
+    }
+
+    async function handleFile(file) {
+      dropzone.style.display = "none";
+      spinnerWrap.style.display = "block";
+      reviewSection.style.display = "none";
+      document.getElementById("result-alert").style.display = "none";
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const res = await fetch("/api/v1/items/classify", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!res.ok) throw new Error("Classification failed: " + res.statusText);
+        const data = await res.json();
+        populateResults(data);
+      } catch (err) {
+        alert("Error analyzing image: " + err.message);
+        dropzone.style.display = "block";
+      } finally {
+        spinnerWrap.style.display = "none";
+      }
+    }
+
+    function populateResults(data) {
+      currentCleanImageUrl = data.clean_image_url;
+      currentOriginalImageUrl = data.original_image_url;
+      priceGuidance = data.suggested_price_range;
+
+      document.getElementById("orig-img").src = currentOriginalImageUrl;
+      document.getElementById("clean-img").src = currentCleanImageUrl;
+
+      const auto = data.auto_fill;
+      document.getElementById("item-title").value = auto.title || "";
+      document.getElementById("item-category").value = auto.category || "Tops";
+      document.getElementById("item-brand").value = auto.brand || "";
+      document.getElementById("item-size").value = auto.size || "M";
+      document.getElementById("item-color").value = auto.color || "";
+      document.getElementById("item-material").value = auto.material || "";
+      document.getElementById("item-condition").value = auto.condition_grade || "VERY_GOOD";
+      document.getElementById("item-description").value = 
+        `${auto.brand} ${auto.category} in ${auto.condition_grade.replace('_', ' ').toLowerCase()} condition. ${auto.material ? 'Fabric: ' + auto.material + '.' : ''}`;
+
+      document.getElementById("val-min").innerText = "$" + priceGuidance.min_price;
+      document.getElementById("val-target").innerText = "$" + priceGuidance.target_price;
+      document.getElementById("val-max").innerText = "$" + priceGuidance.max_price;
+
+      selectPrice("target");
+      reviewSection.style.display = "block";
+      dropzone.style.display = "block";
+    }
+
+    function loadSampleGarment() {
+      // Generate a mock denim jacket on a canvas and submit as blob
+      const canvas = document.createElement("canvas");
+      canvas.width = 400;
+      canvas.height = 480;
+      const ctx = canvas.getContext("2d");
+      // Background (messy room/floor)
+      ctx.fillStyle = "#8a7d72";
+      ctx.fillRect(0, 0, 400, 480);
+      // Garment shape (blue denim)
+      ctx.fillStyle = "#2c4c78";
+      ctx.beginPath();
+      ctx.moveTo(120, 80);
+      ctx.lineTo(280, 80);
+      ctx.lineTo(360, 200);
+      ctx.lineTo(310, 230);
+      ctx.lineTo(270, 160);
+      ctx.lineTo(270, 400);
+      ctx.lineTo(130, 400);
+      ctx.lineTo(130, 160);
+      ctx.lineTo(90, 230);
+      ctx.lineTo(40, 200);
+      ctx.closePath();
+      ctx.fill();
+
+      canvas.toBlob((blob) => {
+        const file = new File([blob], "sample_denim_jacket.jpg", { type: "image/jpeg" });
+        handleFile(file);
+      }, "image/jpeg");
+    }
+
+    document.getElementById("listing-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const publishBtn = document.getElementById("publish-btn");
+      publishBtn.disabled = true;
+      publishBtn.innerText = "Publishing to ReWearIt Catalog...";
+
+      const chosenPrice = parseInt(document.getElementById("item-price").value, 10);
+      const payload = {
+        seller_id: "00000000-0000-0000-0000-000000000001",
+        title: document.getElementById("item-title").value,
+        category: document.getElementById("item-category").value,
+        brand: document.getElementById("item-brand").value,
+        size: document.getElementById("item-size").value,
+        color: document.getElementById("item-color").value,
+        material: document.getElementById("item-material").value,
+        condition_grade: document.getElementById("item-condition").value,
+        description: document.getElementById("item-description").value,
+        price_currency: "USD",
+        price_units: chosenPrice,
+        price_nanos: 0,
+        image_urls: [currentCleanImageUrl],
+      };
+
+      try {
+        const res = await fetch("/api/v1/items", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) throw new Error("Publishing failed: " + res.statusText);
+        const created = await res.json();
+
+        const alertBox = document.getElementById("result-alert");
+        document.getElementById("result-detail").innerHTML = 
+          `Item ID: <code>${created.id}</code><br>` +
+          `Title: <strong>${created.title}</strong><br>` +
+          `Listing Price: <strong>$${created.price_units} USD</strong> (Your custom price)<br>` +
+          `Studio Image: <a href="${created.image_urls[0]}" target="_blank" style="color: #6ee7b7;">View Catalog Image</a>`;
+        alertBox.style.display = "block";
+        alertBox.scrollIntoView({ behavior: "smooth" });
+      } catch (err) {
+        alert("Failed to publish: " + err.message);
+      } finally {
+        publishBtn.disabled = false;
+        publishBtn.innerText = "Publish Item to Catalog";
+      }
+    });
+  </script>
+</body>
+</html>

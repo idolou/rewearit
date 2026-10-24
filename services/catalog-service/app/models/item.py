@@ -47,6 +47,8 @@ class ItemBase(SQLModel):
     category: str = Field(index=True)
     brand: str = Field(max_length=100, index=True)
     size: str = Field(max_length=50)
+    color: str | None = Field(default=None, max_length=50)
+    material: str | None = Field(default=None, max_length=100)
     condition_grade: ConditionGrade = Field(default=ConditionGrade.GOOD, index=True)
     price_currency: str = Field(default="USD", max_length=3)
     price_units: int = Field(ge=0)

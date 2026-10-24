@@ -38,5 +38,8 @@ class Settings(BaseSettings):
     S3_ACCESS_KEY: str = "minioadmin"
     S3_SECRET_KEY: str = "minioadminpassword"
 
+    # AI Worker Service
+    AI_WORKER_URL: str = "http://localhost:8002"
+
 
 settings = Settings()
