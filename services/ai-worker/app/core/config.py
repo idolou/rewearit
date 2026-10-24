@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     # MinIO / S3 Storage
     S3_ENDPOINT: str = "http://localhost:9000"
+    S3_PUBLIC_URL: str = "http://localhost:9000"
     S3_ACCESS_KEY: str = "minioadmin"
     S3_SECRET_KEY: str = "minioadminpassword"
     S3_BUCKET_GARMENTS: str = "rewearit-garments"

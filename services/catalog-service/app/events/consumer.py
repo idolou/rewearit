@@ -107,7 +107,8 @@ class CatalogEventConsumer:
 
             if event.visual_embedding:
                 item.embedding = list(event.visual_embedding)
-            item.condition_grade = map_proto_to_condition_grade(event.condition_grade)
+            if not item.condition_grade:
+                item.condition_grade = map_proto_to_condition_grade(event.condition_grade)
             item.status = ItemStatus.ACTIVE
             item.updated_at = datetime.now(UTC)
 

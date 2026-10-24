@@ -564,7 +564,8 @@
       publishBtn.disabled = true;
       publishBtn.innerText = "Publishing to ReWearIt Catalog...";
 
-      const chosenPrice = parseInt(document.getElementById("item-price").value, 10);
+      const parsedPrice = parseInt(document.getElementById("item-price").value, 10);
+      const chosenPrice = isNaN(parsedPrice) || parsedPrice <= 0 ? (priceGuidance.target_price || 30) : parsedPrice;
       const payload = {
         seller_id: "00000000-0000-0000-0000-000000000001",
         title: document.getElementById("item-title").value,
@@ -592,11 +593,13 @@
         const created = await res.json();
 
         const alertBox = document.getElementById("result-alert");
+        const safeTitle = document.createElement("div");
+        safeTitle.textContent = created.title;
         document.getElementById("result-detail").innerHTML = 
-          `Item ID: <code>${created.id}</code><br>` +
-          `Title: <strong>${created.title}</strong><br>` +
+          `Item ID: <code>${encodeURIComponent(created.id)}</code><br>` +
+          `Title: <strong>${safeTitle.innerHTML}</strong><br>` +
           `Listing Price: <strong>$${created.price_units} USD</strong> (Your custom price)<br>` +
-          `Studio Image: <a href="${created.image_urls[0]}" target="_blank" style="color: #6ee7b7;">View Catalog Image</a>`;
+          `Studio Image: <a href="${encodeURI(created.image_urls[0])}" target="_blank" style="color: #6ee7b7;">View Catalog Image</a>`;
         alertBox.style.display = "block";
         alertBox.scrollIntoView({ behavior: "smooth" });
       } catch (err) {

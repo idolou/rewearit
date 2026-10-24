@@ -1,6 +1,7 @@
 """S3 / MinIO object storage helper for garment photos."""
 import io
 import uuid
+
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError, EndpointConnectionError
@@ -14,6 +15,7 @@ class S3Storage:
 
     def __init__(self) -> None:
         self.endpoint_url = settings.S3_ENDPOINT
+        self.public_url = getattr(settings, "S3_PUBLIC_URL", None) or self.endpoint_url
         self.bucket = settings.S3_BUCKET_GARMENTS
         self._config = Config(
             connect_timeout=1.0,
@@ -35,11 +37,27 @@ class S3Storage:
         if self._bucket_verified:
             return
         try:
-            self._client.create_bucket(Bucket=self.bucket)
+            self._client.head_bucket(Bucket=self.bucket)
             self._bucket_verified = True
             self._s3_available = True
-        except (ClientError, EndpointConnectionError, Exception) as e:
-            logger.debug(f"S3 bucket creation or check note ({self.bucket}): {e}")
+        except ClientError as e:
+            code = str(e.response.get("Error", {}).get("Code", ""))
+            if code in ("404", "NoSuchBucket"):
+                try:
+                    self._client.create_bucket(Bucket=self.bucket)
+                    self._bucket_verified = True
+                    self._s3_available = True
+                except Exception as ce:
+                    logger.warning(f"Could not create S3 bucket {self.bucket}: {ce}")
+                    self._s3_available = False
+            elif code in ("403", "BucketAlreadyOwnedByYou", "BucketAlreadyExists"):
+                self._bucket_verified = True
+                self._s3_available = True
+            else:
+                logger.debug(f"S3 head_bucket returned {code}: {e}")
+                self._s3_available = False
+        except (EndpointConnectionError, Exception) as e:
+            logger.debug(f"S3 connection unavailable: {e}")
             self._bucket_verified = True
             self._s3_available = False
 
@@ -68,4 +86,4 @@ class S3Storage:
                 logger.warning(f"Could not upload image {filename} to MinIO ({e}). Returning direct URL.")
                 self._s3_available = False
 
-        return f"{self.endpoint_url}/{self.bucket}/{filename}"
+        return f"{self.public_url}/{self.bucket}/{filename}"

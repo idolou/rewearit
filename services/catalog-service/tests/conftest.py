@@ -1,5 +1,6 @@
 """Test fixtures and connection guards for catalog service."""
 import socket
+
 import pytest
 
 

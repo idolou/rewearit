@@ -1,9 +1,8 @@
 """Studio background removal and catalog framing engine for apparel listings."""
 import io
-import math
-from typing import Tuple
 
-from PIL import Image, ImageOps
+import numpy as np
+from PIL import Image
 
 from app.core.logging import logger
 
@@ -21,7 +20,7 @@ class StudioEnhancer:
         canvas_width: int = 1000,
         canvas_height: int = 1000,
         padding_ratio: float = 0.08,
-        background_rgb: Tuple[int, int, int] = (255, 255, 255),
+        background_rgb: tuple[int, int, int] = (255, 255, 255),
     ) -> None:
         self.canvas_width = canvas_width
         self.canvas_height = canvas_height
@@ -39,14 +38,13 @@ class StudioEnhancer:
             except Exception as e:
                 logger.warning(f"rembg background removal encountered an issue ({e}), using fallback matting")
 
-        # Fallback: edge-preserving luminosity alpha mask
+        # Fallback: multi-channel Euclidean color distance alpha mask
         return self._fallback_alpha_matting(image_bytes)
 
     def _fallback_alpha_matting(self, image_bytes: bytes) -> bytes:
-        """Fallback background isolation when deep learning model is unavailable."""
+        """Fallback background isolation using multi-channel Euclidean color distance."""
         with Image.open(io.BytesIO(image_bytes)) as img:
             rgba = img.convert("RGBA")
-            # Analyze corner color to estimate background
             w, h = rgba.size
             corners = [
                 rgba.getpixel((0, 0)),
@@ -54,22 +52,21 @@ class StudioEnhancer:
                 rgba.getpixel((0, h - 1)),
                 rgba.getpixel((w - 1, h - 1)),
             ]
-            bg_r = sum(c[0] for c in corners) // 4
-            bg_g = sum(c[1] for c in corners) // 4
-            bg_b = sum(c[2] for c in corners) // 4
+            bg_r = sum(c[0] for c in corners) / 4.0
+            bg_g = sum(c[1] for c in corners) / 4.0
+            bg_b = sum(c[2] for c in corners) / 4.0
 
-            # Create smooth alpha channel based on color distance from estimated background
-            r, g, b, _ = rgba.split()
-            diff_r = ImageOps.invert(Image.eval(r, lambda x: min(255, abs(x - bg_r) * 2)))
-            diff_g = ImageOps.invert(Image.eval(g, lambda x: min(255, abs(x - bg_g) * 2)))
-            diff_b = ImageOps.invert(Image.eval(b, lambda x: min(255, abs(x - bg_b) * 2)))
+            arr = np.array(rgba, dtype=np.float32)
+            rgb = arr[:, :, :3]
+            bg_vec = np.array([bg_r, bg_g, bg_b], dtype=np.float32)
 
-            # Threshold for foreground
-            alpha_mask = Image.eval(
-                ImageOps.invert(diff_r),
-                lambda x: 255 if x > 35 else int((x / 35.0) * 255),
-            )
-            rgba.putalpha(alpha_mask)
+            # Euclidean color distance across all 3 color channels
+            dist = np.linalg.norm(rgb - bg_vec, axis=2)
+
+            # Smoothstep alpha thresholding (dist < 15 -> 0, dist > 40 -> 255)
+            alpha = np.clip((dist - 15.0) / 25.0 * 255.0, 0, 255).astype(np.uint8)
+            alpha_img = Image.fromarray(alpha, mode="L")
+            rgba.putalpha(alpha_img)
 
             out = io.BytesIO()
             rgba.save(out, format="PNG")

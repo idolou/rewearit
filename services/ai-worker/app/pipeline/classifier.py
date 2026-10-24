@@ -1,5 +1,6 @@
 """Garment classification and studio image enhancement coordinator."""
 from typing import Any
+
 from pydantic import BaseModel, Field
 
 from app.pipeline.studio import StudioEnhancer

@@ -30,6 +30,8 @@ async def classify_item(request: Request) -> dict[str, Any]:
                 for k, v in form.items():
                     if hasattr(v, "read"):
                         file_bytes = await v.read()
+                        if len(file_bytes) > 15 * 1024 * 1024:
+                            raise HTTPException(status_code=413, detail="File size exceeds 15MB limit")
                         files[k] = (v.filename or "upload.jpg", file_bytes, v.content_type or "image/jpeg")
                     else:
                         data[k] = str(v)
@@ -39,11 +41,13 @@ async def classify_item(request: Request) -> dict[str, Any]:
                 resp = await client.post(target_url, json=body)
 
             resp.raise_for_status()
-            return resp.json()
+            return resp.json()  # type: ignore[no-any-return]
+        except HTTPException:
+            raise
         except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=e.response.status_code, detail=f"AI Worker error: {e.response.text}")
+            raise HTTPException(status_code=e.response.status_code, detail=f"AI Worker error: {e.response.text}") from e
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Could not reach AI Worker at {target_url}: {e}")
+            raise HTTPException(status_code=502, detail=f"Could not reach AI Worker at {target_url}: {e}") from e
 
 
 

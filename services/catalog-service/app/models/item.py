@@ -32,6 +32,7 @@ class ItemCategory(enum.StrEnum):
     OUTERWEAR = "Outerwear"
     FOOTWEAR = "Footwear"
     ACCESSORIES = "Accessories"
+    DRESSES = "Dresses"
 
 
 class Money(BaseModel):

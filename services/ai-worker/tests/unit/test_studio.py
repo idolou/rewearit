@@ -1,6 +1,6 @@
 """Unit tests for StudioEnhancer background removal and catalog framing."""
 import io
-import pytest
+
 from PIL import Image, ImageDraw
 
 from app.pipeline.studio import StudioEnhancer
@@ -54,3 +54,19 @@ def test_studio_enhancer_create_catalog_ready_image() -> None:
     with Image.open(io.BytesIO(output)) as img:
         assert img.size == (500, 500)
         assert img.mode == "RGB"
+
+
+def test_studio_enhancer_yellow_garment_on_white_background() -> None:
+    """Ensure yellow garment on white background is not erased by alpha matting."""
+    img = Image.new("RGB", (200, 200), color=(255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([50, 50, 150, 150], fill=(255, 220, 0))  # Yellow garment (red channel identical to white)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+
+    enhancer = StudioEnhancer()
+    foreground = enhancer.remove_background(buf.getvalue())
+    with Image.open(io.BytesIO(foreground)) as res:
+        center_alpha = res.getpixel((100, 100))[3]
+        assert center_alpha > 150
+

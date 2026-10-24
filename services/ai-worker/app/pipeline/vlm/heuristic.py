@@ -1,6 +1,7 @@
 """Resilient heuristic VLM client for local/offline appraisal and fallback."""
 import io
 import re
+
 from PIL import Image
 
 from app.core.logging import logger

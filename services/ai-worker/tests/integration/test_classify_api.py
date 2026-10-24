@@ -1,6 +1,7 @@
 """Integration test for AI Worker /api/v1/classify HTTP endpoint."""
 import base64
 import io
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from PIL import Image

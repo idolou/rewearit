@@ -2,6 +2,7 @@
 import base64
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -15,6 +16,9 @@ from app.pipeline.classifier import (
 )
 from app.pipeline.preprocessor import ImagePreprocessor
 from app.storage.s3 import S3Storage
+
+MAX_UPLOAD_BYTES = 15 * 1024 * 1024  # 15 MB
+BLOCKED_HOSTS = {"169.254.169.254", "metadata.google.internal"}
 
 app = FastAPI(
     title="ReWearIt AI Worker Probes and Classification Service",
@@ -83,8 +87,8 @@ async def classify_item(request: Request) -> ClassifyResponse:
     else:
         try:
             body = await request.json()
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid request body")
+        except Exception as e:
+            raise HTTPException(status_code=400, detail="Invalid request body") from e
 
         title = body.get("title", "")
         description = body.get("description", "")
@@ -94,15 +98,22 @@ async def classify_item(request: Request) -> ClassifyResponse:
             try:
                 image_bytes = base64.b64decode(body["image_base64"])
             except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {e}")
+                raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {e}") from e
         elif body.get("image_url"):
+            target_url = str(body["image_url"]).strip()
+            parsed = urlparse(target_url)
+            if parsed.hostname in BLOCKED_HOSTS:
+                raise HTTPException(status_code=400, detail="Access to specified host is forbidden")
             try:
-                image_bytes = await _preprocessor.fetch_image(body["image_url"])
+                image_bytes = await _preprocessor.fetch_image(target_url)
             except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Failed to fetch image from URL: {e}")
+                raise HTTPException(status_code=400, detail=f"Failed to fetch image from URL: {e}") from e
 
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Image must be provided via multipart 'file', 'image_base64', or 'image_url'")
+
+    if len(image_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"Uploaded image exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)}MB size limit")
 
     session_id = uuid.uuid4().hex[:10]
 

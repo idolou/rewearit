@@ -224,6 +224,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_URL: http://localhost:9000
       HEALTH_PORT: 8002
       VLM_PROVIDER: heuristic
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317

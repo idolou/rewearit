@@ -1,9 +1,10 @@
 """Unit tests for GarmentClassifier end-to-end auto-fill and price estimation."""
 import io
+
 import pytest
 from PIL import Image
 
-from app.pipeline.classifier import GarmentClassifier, GarmentClassificationResult
+from app.pipeline.classifier import GarmentClassificationResult, GarmentClassifier
 
 
 def _create_sample_garment_image(color=(30, 80, 160), width=400, height=500) -> bytes:
