@@ -175,6 +175,9 @@ services:
   # Application Microservices & Asynchronous Workers
   # -------------------------------------------------------------
   catalog-service:
+    build:
+      context: ../../services/catalog-service
+      dockerfile: Dockerfile
     image: rewearit-catalog-service:local
     container_name: rewearit-catalog-service
     networks:
@@ -207,6 +210,9 @@ services:
       retries: 5
 
   ai-worker:
+    build:
+      context: ../../services/ai-worker
+      dockerfile: Dockerfile
     image: rewearit-ai-worker:local
     container_name: rewearit-ai-worker
     networks:
@@ -238,6 +244,9 @@ services:
       retries: 5
 
   order-service:
+    build:
+      context: ../../services/order-service
+      dockerfile: Dockerfile
     image: rewearit-order-service:local
     container_name: rewearit-order-service
     networks:

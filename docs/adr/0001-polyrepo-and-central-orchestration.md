@@ -1,6 +1,6 @@
 # ADR 0001: Polyrepo Strategy with Central Architecture & Orchestration Repository
 
-- **Status**: Accepted
+- **Status**: Superseded by ADR 0006 (Monorepo Consolidation)
 - **Date**: 2026-10-17
 - **Deciders**: Ido Lourie
 

@@ -12,9 +12,9 @@
 ## 1. Intent & Executive Summary
 
 ### 1.1 The "Why"
-Modern senior and lead engineering roles demand verifiable mastery of distributed systems: decoupling services with clear domain boundaries, orchestrating resilient asynchronous pipelines, processing big data at scale, integrating cutting-edge multimodal AI, and managing cloud-native infrastructure with Kubernetes and automated CI/CD.
+Second-hand apparel marketplaces face high-throughput, asymmetric data challenges: unique 1-of-1 inventory units, subjective condition grading, high return rates, and rapid price depreciation. 
 
-**ReWearIt** is architected as an enterprise-grade distributed commerce and intelligence platform for second-hand clothing resale (inspired by the technical complexity of platforms like Vinted, StockX, and Depop). Instead of a conventional monolithic CRUD web store, ReWearIt is built as a modular suite of microservices connected via high-throughput event streams, an asynchronous multimodal AI appraisal engine, and a big data analytics pipeline.
+**ReWearIt** is an event-driven distributed resale commerce platform designed to solve these operational challenges using decoupled microservices, asynchronous multimodal AI appraisals, visual similarity search (pgvector), and atomic transactional inventory reservations.
 
 ---
 

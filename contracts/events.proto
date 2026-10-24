@@ -1,0 +1,210 @@
+syntax = "proto3";
+
+package rewearit.events;
+
+import "google/protobuf/timestamp.proto";
+
+// =============================================================
+// Common Types & Enums
+// =============================================================
+
+// Standard Event Header Envelope for all Kafka Messages
+message EventHeader {
+  string event_id = 1;
+  string event_type = 2; // e.g., "item.created", "order.escrow_locked"
+  google.protobuf.Timestamp timestamp = 3;
+  string correlation_id = 4;
+  string producer_service = 5; // e.g., "catalog-service"
+  int32 schema_version = 6;
+}
+
+// Canonical Money representation
+message Money {
+  string currency = 1; // ISO 4217 currency code (e.g., "USD")
+  int64 units = 2;     // Whole units of the currency amount
+  int32 nanos = 3;     // Fractional cents/nanos (10^-9)
+}
+
+// Canonical 5-Tier Condition Grades
+enum ConditionGrade {
+  CONDITION_GRADE_UNSPECIFIED = 0;
+  CONDITION_GRADE_NEW_WITH_TAGS = 1;
+  CONDITION_GRADE_EXCELLENT = 2;
+  CONDITION_GRADE_VERY_GOOD = 3;
+  CONDITION_GRADE_GOOD = 4;
+  CONDITION_GRADE_FAIR = 5;
+}
+
+// Canonical Item Lifecycle Status
+enum ItemStatus {
+  ITEM_STATUS_UNSPECIFIED = 0;
+  ITEM_STATUS_DRAFT = 1;
+  ITEM_STATUS_ANALYZING = 2;
+  ITEM_STATUS_ACTIVE = 3;
+  ITEM_STATUS_RESERVED = 4;
+  ITEM_STATUS_SOLD = 5;
+  ITEM_STATUS_CANCELLED = 6; // Covers unlisted, withdrawn, or cancelled items
+}
+
+// =============================================================
+// Catalog & Item Events
+// =============================================================
+
+message ItemCreatedEvent {
+  EventHeader header = 1;
+  string item_id = 2;
+  string seller_id = 3;
+  string title = 4;
+  string category = 5;
+  string brand = 6;
+  Money proposed_price = 7;
+  repeated string image_urls = 8;
+  string description = 9;
+  string size = 10;
+  ConditionGrade declared_condition = 11;
+}
+
+message ItemStatusChangedEvent {
+  EventHeader header = 1;
+  string item_id = 2;
+  ItemStatus previous_status = 3;
+  ItemStatus new_status = 4;
+  string reason = 5;
+}
+
+// =============================================================
+// AI Multimodal Appraisal Events
+// =============================================================
+
+message AIAppraisalCompletedEvent {
+  EventHeader header = 1;
+  string item_id = 2;
+  string detected_brand = 3;
+  string detected_category = 4;
+  ConditionGrade condition_grade = 5;
+  double condition_confidence = 6;
+  repeated string detected_attributes = 7; // e.g. ["vintage", "denim", "distressed"]
+  Money suggested_min_price = 8;
+  Money suggested_max_price = 9;
+  repeated float visual_embedding = 10; // 512-dim normalized vector
+}
+
+// =============================================================
+// Order & Transaction Events
+// =============================================================
+
+message OrderPlacedEvent {
+  EventHeader header = 1;
+  string order_id = 2;
+  string item_id = 3;
+  string buyer_id = 4;
+  string seller_id = 5;
+  Money total_amount = 6;
+  string idempotency_key = 7;
+}
+
+message OrderEscrowLockedEvent {
+  EventHeader header = 1;
+  string order_id = 2;
+  string item_id = 3;
+  Money escrow_amount = 4;
+  google.protobuf.Timestamp locked_at = 5;
+}
+
+message OrderCompletedEvent {
+  EventHeader header = 1;
+  string order_id = 2;
+  string item_id = 3;
+  string buyer_id = 4;
+  string seller_id = 5;
+  Money payout_amount = 6;
+  google.protobuf.Timestamp completed_at = 7;
+}
+
+message OrderCancelledEvent {
+  EventHeader header = 1;
+  string order_id = 2;
+  string item_id = 3;
+  string buyer_id = 4;
+  string seller_id = 5;
+  string cancellation_reason = 6;
+  google.protobuf.Timestamp cancelled_at = 7;
+}
+
+message OrderRefundedEvent {
+  EventHeader header = 1;
+  string order_id = 2;
+  string item_id = 3;
+  string buyer_id = 4;
+  Money refund_amount = 5;
+  string refund_reason = 6;
+  google.protobuf.Timestamp refunded_at = 7;
+}
+
+// =============================================================
+// Pricing & Market Valuation Events
+// =============================================================
+
+message PricingValuationComputedEvent {
+  EventHeader header = 1;
+  string item_id = 2;
+  string brand = 3;
+  string category = 4;
+  ConditionGrade condition_grade = 5;
+  Money valuation_low = 6;
+  Money valuation_target = 7;
+  Money valuation_high = 8;
+  double confidence_score = 9;
+}
+
+message PriceDropAlertEvent {
+  EventHeader header = 1;
+  string item_id = 2;
+  Money previous_price = 3;
+  Money new_price = 4;
+  double drop_percentage = 5;
+  google.protobuf.Timestamp detected_at = 6;
+}
+
+// =============================================================
+// Telemetry & Clickstream Events
+// =============================================================
+
+message UserInteractionEvent {
+  EventHeader header = 1;
+  string session_id = 2;
+  string user_id = 3; // Optional for anonymous visitors
+  string interaction_type = 4; // "VIEW", "SEARCH", "ADD_TO_FAVORITES", "PRICE_CHECK"
+  string target_item_id = 5;
+  string search_query = 6;
+  string client_ip = 7;
+  string user_agent = 8;
+}
+
+// =============================================================
+// Security & Analytics Payloads
+// =============================================================
+
+message SecurityAlertPayload {
+  EventHeader header = 1;
+  string alert_id = 2;
+  string alert_type = 3; // "HIGH_FREQUENCY_VIEWS", "BOT_SCRAPING", "PAYMENT_BRUTE_FORCE"
+  string client_ip = 4;
+  string user_id = 5;
+  string session_id = 6;
+  int32 request_count = 7;
+  string mitigation_action = 8; // "RATE_LIMIT_STRICT", "BLOCK_TEMPORARY"
+  google.protobuf.Timestamp detected_at = 9;
+}
+
+message PricingMetricsBatchPayload {
+  EventHeader header = 1;
+  string batch_id = 2;
+  string brand = 3;
+  string category = 4;
+  ConditionGrade condition_grade = 5;
+  double resale_retention_percentage = 6;
+  double sales_velocity_score = 7;
+  int32 sample_size = 8;
+  google.protobuf.Timestamp calculated_at = 9;
+}

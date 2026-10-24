@@ -1,218 +1,246 @@
-# ReWearIt: Distributed Resale Commerce & Intelligence Platform
+# ReWearIt
 
-> **Central Architecture, Contract Orchestrator & Knowledge Base**
+Event-driven resale apparel commerce platform with multimodal AI appraisal, pgvector visual search, and atomic 1-of-1 garment reservations.
 
-[![Architecture: Microservices](https://img.shields.io/badge/Architecture-Event--Driven%20Microservices-blue)](./docs/architecture/system-overview.md)
-[![Language: 100% Python](https://img.shields.io/badge/Language-100%25%20Python%203.12-brightgreen)](./docs/adr/0002-pure-python-stack.md)
-[![Event Streaming: Kafka / Redpanda](https://img.shields.io/badge/Streaming-Kafka%20%2F%20Redpanda-red)](./docs/architecture/event-schemas.md)
-[![Big Data: PySpark](https://img.shields.io/badge/Big%20Data-Apache%20Spark-orange)](./docs/architecture/data-streaming-pipeline.md)
-[![AI: Multimodal VLM + pgvector](https://img.shields.io/badge/AI-Multimodal%20VLM%20%2B%20pgvector-purple)](./docs/architecture/ai-multimodal-pipeline.md)
-[![Cloud & Infra: K8s / AWS](https://img.shields.io/badge/Infra-Kubernetes%20%2F%20AWS%20EKS-lightblue)](./docs/architecture/infrastructure-and-k8s.md)
-
----
-
-## 📖 Overview
-
-**ReWearIt** is an enterprise-grade distributed platform designed to solve the high-throughput, asymmetric data challenges of second-hand apparel marketplaces (inspired by platforms like Vinted, StockX, and Depop).
-
-Rather than a simple monolithic storefront, ReWearIt is built as a suite of decoupled, domain-driven microservices connected via Kafka event streams, powered by an asynchronous multimodal AI appraisal engine, and backed by a PySpark big data analytics pipeline.
-
-This repository serves as the **central architecture orchestrator, schema repository, and living knowledge base** for the entire ReWearIt ecosystem.
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
+[![Docker Compose](https://img.shields.io/badge/docker--compose-v2-green.svg)](deploy/docker-compose/docker-compose.yml)
+[![Kafka/Redpanda](https://img.shields.io/badge/streaming-Redpanda-red.svg)](https://redpanda.com/)
+[![pgvector](https://img.shields.io/badge/database-pgvector-purple.svg)](https://github.com/pgvector/pgvector)
+[![OpenTelemetry](https://img.shields.io/badge/observability-OpenTelemetry-orange.svg)](https://opentelemetry.io/)
 
 ---
 
-## 🏛️ System Architecture Topology
+## Architecture
+
+ReWearIt is structured as a decoupled monorepo. Microservices communicate synchronously via gRPC for transactional operations and asynchronously over Kafka (Redpanda) for eventual consistency and domain events. Distributed traces are exported via OpenTelemetry to Jaeger.
 
 ```mermaid
 flowchart TD
     classDef client fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#01579b;
-    classDef gateway fill:#e8eaf6,stroke:#3f51b5,stroke-width:2px,color:#1a237e;
     classDef service fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#1b5e20;
     classDef worker fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c;
     classDef db fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#e65100;
     classDef stream fill:#ffebee,stroke:#d32f2f,stroke-width:2px,color:#b71c1c;
     classDef obs fill:#f5f5f5,stroke:#616161,stroke-width:2px,color:#212121;
 
-    subgraph Clients["Clients & Edge Gateway"]
-        web["Web & Mobile Apps"]:::client
-        gateway["rewearit-gateway<br/>FastAPI / Reverse Proxy<br/>Port 8000"]:::gateway
+    subgraph Clients["Clients"]
+        client["Web / Mobile App"]:::client
     end
 
-    subgraph CoreServices["Domain Microservices (Python 3.12 + FastAPI + gRPC)"]
-        catalog["rewearit-catalog-service<br/>REST :8001 | gRPC :50051"]:::service
-        orders["rewearit-order-service<br/>REST :8003 | gRPC :50052"]:::service
-        pricing["rewearit-pricing-service<br/>REST :8004 | gRPC :50053"]:::service
+    subgraph Services["Core Microservices"]
+        catalog["catalog-service<br/>REST :8001 | gRPC :50051"]:::service
+        order["order-service<br/>REST :8003"]:::service
     end
 
-    subgraph AsyncWorkers["Intelligence & Analytics Workers"]
-        ai_worker["rewearit-ai-worker<br/>Probes :8002<br/>VLM + 512-dim Embeddings"]:::worker
-        data_pipeline["rewearit-data-pipeline<br/>PySpark Streaming & Lakehouse"]:::worker
+    subgraph Workers["Async Workers"]
+        ai["ai-worker<br/>Probes :8002<br/>VLM & 512-dim CLIP Embeddings"]:::worker
     end
 
-    subgraph StorageMesh["Isolated Storage & Caching Layer"]
+    subgraph Storage["Storage & Caching (Isolated Ownership)"]
         db_catalog[("catalog_db<br/>PostgreSQL 16 + pgvector<br/>Port 5432")]:::db
         db_orders[("orders_db<br/>PostgreSQL 16<br/>Port 5433")]:::db
-        db_pricing[("pricing_db<br/>PostgreSQL 16<br/>Port 5434")]:::db
-        redis[("Redis 7<br/>Cache & Idempotency<br/>Port 6379")]:::db
-        minio[("MinIO S3 Storage<br/>Garments & Lakehouse<br/>Port 9000/9001")]:::db
+        redis[("Redis 7<br/>Idempotency & Locks<br/>Port 6379")]:::db
+        minio[("MinIO S3<br/>Garment Media<br/>Port 9000/9001")]:::db
     end
 
-    subgraph KafkaMesh["Event Streaming Mesh (Redpanda / Kafka API :9092)"]
+    subgraph Messaging["Kafka Messaging (Redpanda :9092)"]
         t_items[["rewearit.items.events"]]:::stream
         t_ai[["rewearit.ai.events"]]:::stream
         t_orders[["rewearit.orders.events"]]:::stream
-        t_pricing[["rewearit.pricing.events"]]:::stream
     end
 
-    subgraph ObservabilityMesh["Distributed Visibility & Tracing"]
-        jaeger["Jaeger Distributed Tracing<br/>UI :16686 | OTLP :4317/:4318"]:::obs
-        console["Redpanda Console<br/>Kafka UI :8080"]:::obs
+    subgraph Observability["Distributed Tracing"]
+        jaeger["Jaeger UI (:16686)<br/>OTLP Receiver (:4317)"]:::obs
     end
 
-    %% Client and Gateway Routing
-    web -->|"REST / HTTPS"| gateway
-    gateway -->|"HTTP / REST"| catalog
-    gateway -->|"HTTP / REST"| orders
-    gateway -->|"HTTP / REST"| pricing
+    %% Client Calls
+    client -->|"POST /items"| catalog
+    client -->|"POST /orders"| order
 
-    %% Synchronous Inter-Service gRPC Mesh
-    orders -->|"gRPC ReserveItem<br/>(Atomic 1-of-1 Lock)"| catalog
-    orders -->|"gRPC GetValuation"| pricing
+    %% Synchronous gRPC Reservation
+    order -->|"gRPC ReserveItem<br/>(Atomic 1-of-1 Lock)"| catalog
 
-    %% Service Database Ownership (Strict Domain Boundaries)
-    catalog -->|"Read / Write"| db_catalog
-    orders -->|"Read / Write"| db_orders
-    pricing -->|"Read / Write"| db_pricing
+    %% Storage access
+    catalog --> db_catalog
+    order --> db_orders
+    order -.->|"Idempotency-Key Lock"| redis
+    ai -->|"Read Image Assets"| minio
 
-    %% Caching & Shared Objects
-    catalog -.->|"Cache Embedding"| redis
-    orders -.->|"Idempotency-Key Lock"| redis
-    ai_worker -.->|"SHA-256 Appraisal Cache"| redis
-    ai_worker -->|"Fetch Garment Photos"| minio
-    data_pipeline -->|"Parquet Lakehouse"| minio
-
-    %% Event Streaming Mesh (Pub/Sub)
+    %% Event Streams
     catalog -->|"item.created"| t_items
-    t_items -->|"Consume"| ai_worker
-    ai_worker -->|"ai.appraisal_completed"| t_ai
+    t_items --> ai
+    ai -->|"ai.appraisal_completed"| t_ai
     t_ai -->|"Activate & Embed"| catalog
-    t_ai -->|"Valuation Baseline"| pricing
 
-    orders -->|"order.placed<br/>order.completed"| t_orders
+    order -->|"order.placed<br/>order.completed"| t_orders
     t_orders -->|"Mark Item SOLD"| catalog
-    t_orders -->|"Sales Velocity"| data_pipeline
 
-    %% Distributed Tracing
+    %% Tracing
     catalog -.->|"OTLP Spans"| jaeger
-    orders -.->|"OTLP Spans"| jaeger
-    ai_worker -.->|"OTLP Spans"| jaeger
-    pricing -.->|"OTLP Spans"| jaeger
+    order -.->|"OTLP Spans"| jaeger
+    ai -.->|"OTLP Spans"| jaeger
 ```
 
 ---
 
-## ⚡ 1-of-1 Secondhand Garment Reservation & Escrow Flow
+## 1-of-1 Garment Reservation & Escrow Flow
+
+Second-hand garments are strictly unique (1-of-1 units). To prevent double-selling across concurrent checkouts, `order-service` acquires an atomic Redis idempotency lock, executes a synchronous gRPC reservation with row-level locks in `catalog-service`, and locks escrow funds before confirming the order.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Buyer
-    participant Gateway as rewearit-gateway
-    participant OrderSvc as rewearit-order-service
-    participant Redis as Redis (Idempotency)
-    participant CatalogSvc as rewearit-catalog-service
+    participant OrderSvc as order-service (:8003)
+    participant Redis as Redis (:6379)
+    participant CatalogSvc as catalog-service (:50051)
     participant CatalogDB as catalog_db (PostgreSQL)
     participant Kafka as Redpanda (Kafka)
-    participant AIWorker as rewearit-ai-worker
 
-    Note over Buyer, AIWorker: Phase 1: Listing Creation & AI Appraisal
-    Buyer->>CatalogSvc: POST /api/v1/items (Listing with Photo URL)
-    CatalogSvc->>CatalogDB: INSERT item (Status: ANALYZING)
-    CatalogSvc->>Kafka: Publish item.created (rewearit.items.events)
-    Kafka->>AIWorker: Consume item.created
-    AIWorker->>AIWorker: Strip EXIF, VLM Appraisal, 512-dim Embedding
-    AIWorker->>Kafka: Publish ai.appraisal_completed (rewearit.ai.events)
-    Kafka->>CatalogSvc: Consume ai.appraisal_completed
-    CatalogSvc->>CatalogDB: UPDATE item SET status='ACTIVE', embedding=vec, condition='GOOD'
-
-    Note over Buyer, AIWorker: Phase 2: Atomic Checkout & 1-of-1 Garment Reservation
-    Buyer->>Gateway: POST /api/v1/orders (Idempotency-Key, item_id)
-    Gateway->>OrderSvc: Forward Checkout Request
-    OrderSvc->>Redis: SETNX idempotency:order:<key> (Lock)
+    Buyer->>OrderSvc: POST /api/v1/orders (Idempotency-Key, item_id)
+    OrderSvc->>Redis: SETNX idemp:lock:<key> (Acquire Lock)
     OrderSvc->>CatalogSvc: gRPC ReserveItem(item_id, order_id, ttl=900s)
     CatalogSvc->>CatalogDB: SELECT ... FOR UPDATE WHERE id=item_id AND status='ACTIVE'
+    
     alt Item Available
-        CatalogDB-->>CatalogSvc: Row Locked (1-of-1 Available)
-        CatalogSvc->>CatalogDB: UPDATE item SET status='RESERVED', order_id=order_id
+        CatalogDB-->>CatalogSvc: Row Locked (Active 1-of-1 Unit)
+        CatalogSvc->>CatalogDB: UPDATE item SET status='RESERVED', reserved_by_order_id=order_id
         CatalogSvc-->>OrderSvc: ReserveItemResponse(success=True)
-        OrderSvc->>OrderSvc: Transition Order Status to ESCROW_HELD
-        OrderSvc->>Kafka: Publish order.placed & order.escrow_locked (rewearit.orders.events)
-        OrderSvc-->>Gateway: 201 Created (Order in ESCROW_HELD)
-        Gateway-->>Buyer: 201 Order Confirmed (Escrow Secured)
-    else Item Already Reserved or Sold (Race Condition)
+        OrderSvc->>OrderSvc: Create Order (Status: ESCROW_HELD)
+        OrderSvc->>Kafka: Publish order.placed & order.escrow_locked
+        OrderSvc-->>Buyer: 201 Created (Order in ESCROW_HELD)
+    else Item Already Reserved or Sold
         CatalogDB-->>CatalogSvc: Row Unavailable / Reserved
         CatalogSvc-->>OrderSvc: ReserveItemResponse(success=False, error="ALREADY_RESERVED")
-        OrderSvc-->>Gateway: 409 Conflict ("Garment already reserved")
-        Gateway-->>Buyer: 409 Conflict
+        OrderSvc->>Redis: DEL idemp:lock:<key>
+        OrderSvc-->>Buyer: 409 Conflict ("Item is currently reserved")
     end
 ```
 
 ---
 
-## 📚 Knowledge Base & Design Docs
+## Repository Structure
 
-- **[Master System Design Specification](./docs/superpowers/specs/2026-10-17-rewearit-platform-design.md)**: Exhaustive technical blueprint covering intent, goals, constraints, domain models, and execution boundaries.
-- **[System Architecture & C4 Topology](./docs/architecture/system-overview.md)**: High-level architectural context and container models.
-- **[Service Boundaries & Contracts](./docs/architecture/service-boundaries.md)**: Microservice APIs, database schemas, and domain responsibilities.
-- **[Event Streaming & Kafka Contracts](./docs/architecture/event-schemas.md)**: Topic partitioning, consumer groups, and idempotency guarantees.
-- **[Protobuf Event Schemas (`events.proto`)](./docs/schemas/events.proto)**: Canonical message envelope and payload definitions.
-- **[AI Multimodal Pipeline](./docs/architecture/ai-multimodal-pipeline.md)**: VLM image analysis, condition grading, and pgvector similarity search.
-- **[Big Data & Streaming Pipeline](./docs/architecture/data-streaming-pipeline.md)**: PySpark streaming windows and daily market depreciation batch models.
-- **[Infrastructure & Kubernetes Blueprint](./docs/architecture/infrastructure-and-k8s.md)**: Docker multi-stage builds, Helm charts, and AWS EKS topology.
-- **[AI Agent Development Directives (`AGENTS.md`)](./docs/agent-instructions/AGENTS.md)**: Standards, domain rules, and verification checklist for AI coding agents.
-
-### Architecture Decision Records (ADRs)
-- **[ADR 0001: Polyrepo Strategy with Central Orchestration](./docs/adr/0001-polyrepo-and-central-orchestration.md)**
-- **[ADR 0002: 100% Python Unified Stack](./docs/adr/0002-pure-python-stack.md)**
-- **[ADR 0003: Event-Driven Architecture with Kafka & Redpanda](./docs/adr/0003-event-driven-messaging-with-kafka.md)**
-- **[ADR 0004: Asynchronous Multimodal AI & pgvector Ownership](./docs/adr/0004-multimodal-ai-for-listing-intelligence.md)**
-- **[ADR 0005: Kubernetes, ArgoCD GitOps & Local Parity](./docs/adr/0005-kubernetes-and-gitops-deployment.md)**
-
----
-
-## 🚀 Quickstart: Bootstrapping Local Infrastructure
-
-The platform provides a complete local shared infrastructure mesh via Docker Compose with zero external cloud dependencies:
-
-```bash
-# Navigate to docker compose folder
-cd deploy/docker-compose
-
-# Spin up Redpanda (Kafka), Redpanda Console, Redis, MinIO (S3), and 3 PostgreSQL DBs
-docker compose up -d
+```text
+rewearit/
+├── contracts/                  # Canonical Protobuf & gRPC definitions
+│   ├── catalog_service.proto   # gRPC reservation and visual search schema
+│   └── events.proto            # Kafka event envelope and domain payloads
+├── deploy/
+│   └── docker-compose/         # Full multi-container mesh with healthchecks
+│       └── docker-compose.yml
+├── docs/                       # Architecture decisions (ADRs) & specs
+│   ├── adr/
+│   └── architecture/
+└── services/                   # Independent microservices
+    ├── catalog-service/        # Listings, pgvector visual search, gRPC servicer
+    ├── ai-worker/              # Multimodal VLM appraisal & 512-dim visual embeddings
+    └── order-service/          # Escrow state machine, Redis idempotency, gRPC client
 ```
 
-### Local Services & Dashboards
-| Service | Local Endpoint | Purpose | Credentials |
-| :--- | :--- | :--- | :--- |
-| **Redpanda Console** | `http://localhost:8080` | Kafka Topic & Consumer UI | None |
-| **MinIO Console** | `http://localhost:9001` | S3 Object Storage UI | `minioadmin` / `minioadminpassword` |
-| **Kafka Broker** | `localhost:9092` | Event Ingestion & Streaming | None |
-| **Redis** | `localhost:6379` | Caching & Idempotency Locks | None |
-| **PostgreSQL Catalog** | `localhost:5432` | Inventory & `pgvector` store | `catalog_user` / `catalog_password` |
-| **PostgreSQL Orders** | `localhost:5433` | Order State & Escrow | `orders_user` / `orders_password` |
-| **PostgreSQL Pricing** | `localhost:5434` | Valuation Curves | `pricing_user` / `pricing_password` |
+---
+
+## Services & Ports
+
+| Service | Protocol / Port | Purpose |
+| :--- | :--- | :--- |
+| **`catalog-service`** | REST `:8001`, gRPC `:50051` | Garment catalog, pgvector vector search, gRPC inventory reservations |
+| **`ai-worker`** | Health Probes `:8002` | Asynchronous Kafka worker: VLM attribute extraction & CLIP embeddings |
+| **`order-service`** | REST `:8003` | Order transactions, Redis idempotency, escrow state machine |
+| **`Jaeger UI`** | HTTP `:16686` (OTLP `:4317`) | Distributed tracing across HTTP, gRPC, and Kafka |
+| **`Redpanda Console`** | HTTP `:8080` (Kafka `:9092`) | Kafka cluster management and topic inspection UI |
+| **`MinIO Console`** | HTTP `:9001` (S3 `:9000`) | S3-compatible object storage for garment media |
+| **`PostgreSQL Catalog`** | TCP `:5432` | Database for catalog service with `vector` extension |
+| **`PostgreSQL Orders`** | TCP `:5433` | Database for order and escrow transactions |
 
 ---
 
-## 📦 Sibling Microservices Repositories
+## Quickstart
 
-| Repository | Tech Stack | Description |
-| :--- | :--- | :--- |
-| **`rewearit`** | Markdown, Proto, Helm, Compose | *You are here.* Central architecture & orchestrator. |
-| **`rewearit-gateway`** | FastAPI, Redis, Docker | Edge API gateway, JWT auth, rate limiting. |
-| **`rewearit-catalog-service`** | FastAPI, gRPC, PostgreSQL, pgvector | Inventory listings, visual similarity search. |
-| **`rewearit-order-service`** | FastAPI, gRPC, PostgreSQL, Redis | Escrow state machine, order idempotency. |
-| **`rewearit-pricing-service`** | FastAPI, gRPC, PostgreSQL, Redis | Real-time fair market value calculation. |
-| **`rewearit-ai-worker`** | Python, VLM SDKs, Kafka, S3 | Multimodal clothing categorization & condition grading. |
-| **`rewearit-data-pipeline`** | PySpark, Kafka, Parquet, DuckDB | Clickstream streaming & market analytics batch jobs. |
+### Prerequisites
+- Docker & Docker Compose v2+
+- Python 3.12+ and [`uv`](https://github.com/astral-sh/uv) (for local testing)
+
+### 1. Launch the Cluster
+Run the entire platform with a single command:
+
+```bash
+docker compose -f deploy/docker-compose/docker-compose.yml up -d --build
+```
+
+Verify all containers are healthy:
+
+```bash
+docker compose -f deploy/docker-compose/docker-compose.yml ps
+```
+
+### 2. End-to-End Workflow Verification
+
+#### Step 1: Create a Listing
+```bash
+curl -X POST http://localhost:8001/api/v1/items \
+  -H "Content-Type: application/json" \
+  -d '{
+    "seller_id": "11111111-1111-1111-1111-111111111111",
+    "title": "Vintage Levi'\''s 501 Denim Jacket",
+    "description": "Authentic vintage trucker jacket in light wash denim",
+    "category": "Outerwear",
+    "brand": "Levi'\''s",
+    "size": "L",
+    "condition_grade": "EXCELLENT",
+    "price_units": 145,
+    "status": "ANALYZING",
+    "image_urls": ["https://example.com/images/jacket.jpg"]
+  }'
+```
+*The listing is created with status `ANALYZING`. `ai-worker` automatically consumes the event, grades condition, calculates a 512-dim embedding, and activates the listing (`ACTIVE`).*
+
+#### Step 2: Checkout with Atomic Reservation
+```bash
+curl -X POST http://localhost:8003/api/v1/orders \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: order-run-001" \
+  -d '{
+    "item_id": "<ITEM_ID_FROM_STEP_1>",
+    "seller_id": "11111111-1111-1111-1111-111111111111",
+    "buyer_id": "22222222-2222-2222-2222-222222222222",
+    "total_amount_units": 145,
+    "currency": "USD"
+  }'
+```
+*`order-service` invokes `catalog-service` via gRPC `ReserveItem`. The garment status becomes `RESERVED` and the order moves to `ESCROW_HELD`.*
+
+#### Step 3: Complete Order & Release Escrow
+```bash
+curl -X POST http://localhost:8003/api/v1/orders/<ORDER_ID_FROM_STEP_2>/complete
+```
+*Order transitions to `COMPLETED`. An `order.completed` event is broadcast on Kafka, and `catalog-service` marks the garment as `SOLD`.*
+
+---
+
+## Observability
+
+- **Distributed Traces (Jaeger):** Open [`http://localhost:16686`](http://localhost:16686) in your browser. Inspect end-to-end spans connecting HTTP requests, gRPC reservations, Kafka events, and database transactions.
+- **Kafka Topics & Messages:** Open [`http://localhost:8080`](http://localhost:8080) for the Redpanda UI.
+
+---
+
+## Running Unit & Integration Tests
+
+Each service contains isolated pytest suites:
+
+```bash
+# Catalog Service
+cd services/catalog-service && uv run pytest
+
+# AI Worker
+cd services/ai-worker && uv run pytest
+
+# Order Service
+cd services/order-service && uv run pytest
+```
+
+---
+
+## License
+MIT
