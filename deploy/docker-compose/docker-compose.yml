@@ -191,6 +191,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       PORT: 8001
       GRPC_PORT: 50051
+      AI_WORKER_URL: http://ai-worker:8002
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
       OTEL_EXPORTER_OTLP_INSECURE: "true"
       OTEL_SERVICE_NAME: rewearit-catalog-service

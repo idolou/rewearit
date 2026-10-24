@@ -144,14 +144,34 @@ rewearit/
 
 | Service | Protocol / Port | Purpose |
 | :--- | :--- | :--- |
-| **`catalog-service`** | REST `:8001`, gRPC `:50051` | Garment catalog, pgvector vector search, gRPC inventory reservations |
-| **`ai-worker`** | Health Probes `:8002` | Asynchronous Kafka worker: VLM attribute extraction & CLIP embeddings |
+| **`catalog-service`** | REST `:8001`, gRPC `:50051` | Garment catalog, pgvector vector search, Seller Studio UI (`/upload`) |
+| **`ai-worker`** | REST `:8002` | Studio background removal, VLM classification, CLIP embeddings |
 | **`order-service`** | REST `:8003` | Order transactions, Redis idempotency, escrow state machine |
 | **`Jaeger UI`** | HTTP `:16686` (OTLP `:4317`) | Distributed tracing across HTTP, gRPC, and Kafka |
 | **`Redpanda Console`** | HTTP `:8080` (Kafka `:9092`) | Kafka cluster management and topic inspection UI |
 | **`MinIO Console`** | HTTP `:9001` (S3 `:9000`) | S3-compatible object storage for garment media |
 | **`PostgreSQL Catalog`** | TCP `:5432` | Database for catalog service with `vector` extension |
 | **`PostgreSQL Orders`** | TCP `:5433` | Database for order and escrow transactions |
+
+---
+
+## AI Seller Studio & Catalog Intake
+
+Sellers can upload raw garment photos (taken in bedrooms, on hangers, or against textured backgrounds). ReWearIt automatically:
+1. **Removes the background** and composites the garment onto a clean, centered studio catalog canvas (`#FFFFFF` with 8% balanced padding).
+2. **Auto-populates attributes**: `title`, `category`, `brand`, `size`, `color`, `material`, and `condition_grade`.
+3. **Calculates Fair Market Valuation**: Provides `Min` (quick sale), `Target` (recommended), and `Max` guidance.
+4. **Editable Pre-fill Flow**: The seller reviews the side-by-side comparison (original vs studio catalog frame), adjusts any field, sets their own final price, and publishes in one click.
+
+### Web Studio Demo
+Open [`http://localhost:8001/upload`](http://localhost:8001/upload) in your browser for the interactive seller interface.
+
+### Classification API
+```bash
+curl -X POST http://localhost:8001/api/v1/items/classify \
+  -F "file=@photo.jpg" \
+  -F "title=Levi's Denim Jacket"
+```
 
 ---
 
