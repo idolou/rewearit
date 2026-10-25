@@ -14,6 +14,7 @@ from app.pipeline.classifier import (
     GarmentClassifier,
     PriceRangeRecommendation,
 )
+from app.pipeline.embeddings.encoder import VisualEmbeddingEncoder
 from app.pipeline.preprocessor import ImagePreprocessor
 from app.storage.s3 import S3Storage
 
@@ -34,6 +35,7 @@ _is_healthy = True
 _classifier = GarmentClassifier()
 _s3_storage = S3Storage()
 _preprocessor = ImagePreprocessor()
+_encoder = VisualEmbeddingEncoder(dimension=512)
 
 
 class ClassifyResponse(BaseModel):
@@ -41,6 +43,11 @@ class ClassifyResponse(BaseModel):
     original_image_url: str = Field(description="URL of uploaded raw image")
     auto_fill: AutoFillAttributes
     suggested_price_range: PriceRangeRecommendation
+
+
+class EmbeddingResponse(BaseModel):
+    embedding: list[float] = Field(description="512-dimensional normalized embedding vector")
+    dimension: int = Field(default=512)
 
 
 def set_ready(ready: bool) -> None:
@@ -139,3 +146,49 @@ async def classify_item(request: Request) -> ClassifyResponse:
         auto_fill=result.auto_fill,
         suggested_price_range=result.suggested_price_range,
     )
+
+
+@app.post("/api/v1/embeddings", response_model=EmbeddingResponse)
+async def generate_embedding(request: Request) -> EmbeddingResponse:
+    """Generate 512-dimensional multimodal visual embedding from garment photo."""
+    content_type = request.headers.get("content-type", "")
+    image_bytes: bytes | None = None
+    context_text = ""
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        upload = form.get("file")
+        if upload and hasattr(upload, "read"):
+            image_bytes = await upload.read()
+        context_text = str(form.get("context_text", "")) if form.get("context_text") else ""
+    else:
+        try:
+            body = await request.json()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail="Invalid request body") from e
+
+        context_text = body.get("context_text", "")
+        if body.get("image_base64"):
+            try:
+                image_bytes = base64.b64decode(body["image_base64"])
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {e}") from e
+        elif body.get("image_url"):
+            target_url = str(body["image_url"]).strip()
+            parsed = urlparse(target_url)
+            if parsed.hostname in BLOCKED_HOSTS:
+                raise HTTPException(status_code=400, detail="Access to specified host is forbidden")
+            try:
+                image_bytes = await _preprocessor.fetch_image(target_url)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to fetch image from URL: {e}") from e
+
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Image must be provided via multipart 'file', 'image_base64', or 'image_url'")
+
+    if len(image_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"Uploaded image exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)}MB size limit")
+
+    embedding = _encoder.encode_image(image_bytes, context_text=context_text)
+    return EmbeddingResponse(embedding=embedding, dimension=len(embedding))
+
