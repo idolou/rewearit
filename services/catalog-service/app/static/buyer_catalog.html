@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ReWearIt Marketplace — Authenticated Pre-Loved Apparel</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --primary: #38bdf8;
+      --primary-hover: #0ea5e9;
+      --accent: #10b981;
+      --accent-soft: rgba(16, 185, 129, 0.15);
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --danger: #ef4444;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    /* Navbar */
+    header {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 1rem 1.5rem;
+    }
+    .nav-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .logo {
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-decoration: none;
+    }
+    .nav-links {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+    .nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    .nav-link:hover, .nav-link.active { color: var(--primary); }
+    .btn-seller {
+      background: linear-gradient(135deg, #38bdf8 0%, #6366f1 100%);
+      color: #ffffff;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: opacity 0.2s;
+    }
+    .btn-seller:hover { opacity: 0.9; }
+
+    /* Main Container */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    /* Hero */
+    .hero {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    .hero h1 {
+      font-size: 2.6rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+    }
+    .hero p {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      margin-top: 0.75rem;
+      max-width: 680px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* Visual Search Panel */
+    .visual-search-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    }
+    .visual-search-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .visual-search-header h2 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .badge-pgvector {
+      background: rgba(129, 140, 248, 0.2);
+      color: #a5b4fc;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .dropzone-compact {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: rgba(15, 23, 42, 0.4);
+    }
+    .dropzone-compact:hover, .dropzone-compact.dragover {
+      border-color: var(--primary);
+      background: rgba(56, 189, 248, 0.05);
+    }
+    .file-input { display: none; }
+    .btn-sample {
+      background: #334155;
+      color: var(--text);
+      border: none;
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      margin-top: 0.5rem;
+      transition: background 0.2s;
+    }
+    .btn-sample:hover { background: #475569; }
+
+    /* Active Visual Filter Bar */
+    .active-visual-banner {
+      display: none;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid var(--primary);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1.5rem;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .btn-clear-visual {
+      background: transparent;
+      border: 1px solid var(--primary);
+      color: var(--primary);
+      padding: 0.3rem 0.7rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+
+    /* Category Filter Pills */
+    .category-pills {
+      display: flex;
+      gap: 0.5rem;
+      overflow-x: auto;
+      padding-bottom: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .pill {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 0.45rem 1rem;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .pill:hover, .pill.active {
+      background: var(--primary);
+      color: #0b1120;
+      border-color: var(--primary);
+    }
+
+    /* Search Input & Controls */
+    .controls-bar {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .search-input {
+      flex: 1;
+      min-width: 240px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.65rem 1rem;
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+    .search-input:focus { outline: none; border-color: var(--primary); }
+
+    /* Garment Grid */
+    .items-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1.5rem;
+    }
+    .item-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .item-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+    .item-img-wrap {
+      width: 100%;
+      height: 260px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      padding: 0.75rem;
+    }
+    .item-img-wrap img {
+      max-height: 100%;
+      max-width: 100%;
+      object-fit: contain;
+    }
+    .badge-condition {
+      position: absolute;
+      top: 0.75rem;
+      left: 0.75rem;
+      background: rgba(15, 23, 42, 0.85);
+      color: #38bdf8;
+      backdrop-filter: blur(4px);
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .badge-similarity {
+      position: absolute;
+      top: 0.75rem;
+      right: 0.75rem;
+      background: var(--accent);
+      color: #064e3b;
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 800;
+    }
+    .item-body {
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+    }
+    .item-brand {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .item-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 0.25rem 0 0.5rem;
+      color: var(--text);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .item-meta {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+    .item-footer {
+      margin-top: auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 0.75rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .item-price {
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: #ffffff;
+    }
+    .btn-buy {
+      background: var(--accent);
+      color: #064e3b;
+      border: none;
+      padding: 0.55rem 1rem;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-buy:hover { opacity: 0.9; transform: scale(1.02); }
+    .btn-buy:disabled {
+      background: #475569;
+      color: #94a3b8;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .modal-content {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      max-width: 480px;
+      width: 100%;
+      padding: 1.75rem;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    }
+    .escrow-box {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 0.85rem;
+      margin: 1.25rem 0;
+      font-size: 0.85rem;
+      color: #ecfdf5;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <header>
+    <div class="nav-container">
+      <a href="/" class="logo">ReWearIt Marketplace</a>
+      <div class="nav-links">
+        <a href="/" class="nav-link active">Browse</a>
+        <a href="/upload" class="btn-seller">+ Sell an Item (Studio AI)</a>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Hero -->
+    <div class="hero">
+      <h1>Authenticated Second-Hand Fashion</h1>
+      <p>Clean studio-framed catalog items with pgvector visual search and atomic 1-of-1 reservation escrow.</p>
+    </div>
+
+    <!-- Visual Search Panel -->
+    <div class="visual-search-card">
+      <div class="visual-search-header">
+        <h2>
+          <span>Search by Photo</span>
+          <span class="badge-pgvector">pgvector 512-dim CLIP</span>
+        </h2>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">Find visually matching garments</span>
+      </div>
+      <div class="dropzone-compact" id="visual-dropzone">
+        <p><strong>Click or Drag an image here</strong> to find visually similar items in the catalog</p>
+        <input type="file" id="visual-file-input" class="file-input" accept="image/*">
+        <div>
+          <button type="button" class="btn-sample" id="btn-sample-query">Try Sample Jacket Query</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Visual Search Banner -->
+    <div class="active-visual-banner" id="visual-banner">
+      <div>
+        <strong>Visual Search Active:</strong>
+        <span id="visual-banner-text" style="color: var(--text-muted); margin-left: 0.5rem;">Sorted by visual cosine similarity</span>
+      </div>
+      <button class="btn-clear-visual" id="btn-clear-visual">Clear Photo Filter</button>
+    </div>
+
+    <!-- Category Filter Pills -->
+    <div class="category-pills" id="category-pills">
+      <button class="pill active" data-category="">All Categories</button>
+      <button class="pill" data-category="Tops">Tops</button>
+      <button class="pill" data-category="Bottoms">Bottoms</button>
+      <button class="pill" data-category="Outerwear">Outerwear</button>
+      <button class="pill" data-category="Footwear">Footwear</button>
+      <button class="pill" data-category="Accessories">Accessories</button>
+      <button class="pill" data-category="Dresses">Dresses</button>
+    </div>
+
+    <!-- Controls Bar -->
+    <div class="controls-bar">
+      <input type="text" id="text-search" class="search-input" placeholder="Search by title, brand, or style...">
+    </div>
+
+    <!-- Items Grid -->
+    <div class="items-grid" id="items-grid">
+      <!-- Items dynamically populated -->
+    </div>
+  </div>
+
+  <!-- Buy / Escrow Modal -->
+  <div class="modal-backdrop" id="buy-modal">
+    <div class="modal-content">
+      <h2 style="font-size: 1.25rem; margin-bottom: 0.5rem;">Confirm Escrow Reservation</h2>
+      <p style="color: var(--text-muted); font-size: 0.9rem;" id="modal-item-title"></p>
+
+      <div style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
+        <span style="color: var(--text-muted);">Amount</span>
+        <strong style="font-size: 1.3rem; color: #ffffff;" id="modal-item-price">$0 USD</strong>
+      </div>
+
+      <div class="escrow-box">
+        <strong>Atomic 1-of-1 Garment Guarantee</strong><br>
+        This item is uniquely reserved via gRPC row locks. Your funds are protected in escrow until you receive and authenticate the package.
+      </div>
+
+      <div id="modal-status" style="display: none; padding: 0.75rem; border-radius: 6px; font-size: 0.85rem; margin-bottom: 1rem;"></div>
+
+      <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
+        <button type="button" class="btn-sample" id="modal-cancel-btn" style="flex: 1; padding: 0.75rem;">Cancel</button>
+        <button type="button" class="btn-buy" id="modal-confirm-btn" style="flex: 2; padding: 0.75rem;">Lock Escrow & Buy</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allItems = [];
+    let currentCategory = "";
+    let selectedItem = null;
+
+    const itemsGrid = document.getElementById("items-grid");
+    const visualDropzone = document.getElementById("visual-dropzone");
+    const visualFileInput = document.getElementById("visual-file-input");
+    const visualBanner = document.getElementById("visual-banner");
+    const textSearch = document.getElementById("text-search");
+    const buyModal = document.getElementById("buy-modal");
+
+    // Fetch and display active items
+    async function loadItems() {
+      try {
+        const url = currentCategory ? `/api/v1/items?category=${encodeURIComponent(currentCategory)}` : "/api/v1/items";
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Failed to load catalog items");
+        allItems = await res.json();
+        renderGrid(allItems);
+      } catch (err) {
+        itemsGrid.innerHTML = `<p style="color: var(--danger);">Error loading catalog: ${err.message}</p>`;
+      }
+    }
+
+    function renderGrid(items, isVisualSearch = false) {
+      if (!items || items.length === 0) {
+        itemsGrid.innerHTML = `<p style="color: var(--text-muted); grid-column: 1/-1; text-align: center; padding: 3rem 0;">No available garments found.</p>`;
+        return;
+      }
+
+      itemsGrid.innerHTML = items.map(entry => {
+        const item = isVisualSearch ? entry.item : entry;
+        const similarity = isVisualSearch ? Math.round(entry.similarity * 100) : null;
+        const imgSrc = (item.image_urls && item.image_urls.length > 0) ? item.image_urls[0] : "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect width='200' height='200' fill='%231e293b'/%3E%3C/svg%3E";
+        const condition = (item.condition_grade || "GOOD").replace("_", " ");
+        const isAvailable = item.status === "ACTIVE" || item.status === "ANALYZING";
+
+        return `
+          <div class="item-card">
+            <div class="item-img-wrap">
+              <span class="badge-condition">${condition}</span>
+              ${similarity ? `<span class="badge-similarity">${similarity}% Match</span>` : ""}
+              <img src="${imgSrc}" alt="${encodeHTML(item.title)}" loading="lazy">
+            </div>
+            <div class="item-body">
+              <div class="item-brand">${encodeHTML(item.brand || "Unbranded")} • ${encodeHTML(item.category || "Apparel")}</div>
+              <div class="item-title">${encodeHTML(item.title)}</div>
+              <div class="item-meta">Size: <strong>${encodeHTML(item.size || "M")}</strong> ${item.color ? `• ${encodeHTML(item.color)}` : ""}</div>
+              <div class="item-footer">
+                <span class="item-price">$${item.price_units}</span>
+                <button class="btn-buy" onclick="openBuyModal('${item.id}')" ${!isAvailable ? "disabled" : ""}>
+                  ${isAvailable ? "Buy Now" : item.status}
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function encodeHTML(str) {
+      return (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    // Category filtering
+    document.getElementById("category-pills").addEventListener("click", (e) => {
+      if (e.target.classList.contains("pill")) {
+        document.querySelectorAll(".pill").forEach(p => p.classList.remove("active"));
+        e.target.classList.add("active");
+        currentCategory = e.target.getAttribute("data-category");
+        loadItems();
+      }
+    });
+
+    // Text search filtering
+    textSearch.addEventListener("input", (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      if (!q) { renderGrid(allItems); return; }
+      const filtered = allItems.filter(item => 
+        (item.title && item.title.toLowerCase().includes(q)) ||
+        (item.brand && item.brand.toLowerCase().includes(q)) ||
+        (item.description && item.description.toLowerCase().includes(q))
+      );
+      renderGrid(filtered);
+    });
+
+    // Visual Search handlers
+    visualDropzone.addEventListener("click", () => visualFileInput.click());
+    visualDropzone.addEventListener("dragover", (e) => { e.preventDefault(); visualDropzone.classList.add("dragover"); });
+    visualDropzone.addEventListener("dragleave", () => visualDropzone.classList.remove("dragover"));
+    visualDropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      visualDropzone.classList.remove("dragover");
+      if (e.dataTransfer.files.length > 0) executeVisualSearch(e.dataTransfer.files[0]);
+    });
+    visualFileInput.addEventListener("change", (e) => {
+      if (e.target.files.length > 0) executeVisualSearch(e.target.files[0]);
+    });
+
+    document.getElementById("btn-sample-query").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const canvas = document.createElement("canvas");
+      canvas.width = 300; canvas.height = 300;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#1e3a8a";
+      ctx.fillRect(50, 50, 200, 200);
+      canvas.toBlob((blob) => {
+        const file = new File([blob], "sample_query.jpg", { type: "image/jpeg" });
+        executeVisualSearch(file);
+      }, "image/jpeg");
+    });
+
+    async function executeVisualSearch(file) {
+      visualBanner.style.display = "flex";
+      document.getElementById("visual-banner-text").innerText = "Analyzing image with CLIP & querying pgvector cosine similarity...";
+      itemsGrid.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--primary);">Searching similar garments by photo...</p>`;
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const res = await fetch("/api/v1/items/search/visual-image?limit=12", {
+          method: "POST",
+          body: formData,
+        });
+        if (!res.ok) throw new Error("Visual search failed: " + res.statusText);
+        const results = await res.json();
+        document.getElementById("visual-banner-text").innerText = `Found ${results.length} visually matching garments`;
+        renderGrid(results, true);
+      } catch (err) {
+        alert("Visual search error: " + err.message);
+        visualBanner.style.display = "none";
+        loadItems();
+      }
+    }
+
+    document.getElementById("btn-clear-visual").addEventListener("click", () => {
+      visualBanner.style.display = "none";
+      loadItems();
+    });
+
+    // Buy / Escrow Modal
+    window.openBuyModal = function(itemId) {
+      selectedItem = allItems.find(i => i.id === itemId);
+      if (!selectedItem) return;
+
+      document.getElementById("modal-item-title").innerText = selectedItem.title;
+      document.getElementById("modal-item-price").innerText = `$${selectedItem.price_units} USD`;
+      document.getElementById("modal-status").style.display = "none";
+      document.getElementById("modal-confirm-btn").disabled = false;
+      document.getElementById("modal-confirm-btn").innerText = "Lock Escrow & Buy";
+      buyModal.style.display = "flex";
+    };
+
+    document.getElementById("modal-cancel-btn").addEventListener("click", () => {
+      buyModal.style.display = "none";
+    });
+
+    document.getElementById("modal-confirm-btn").addEventListener("click", async () => {
+      if (!selectedItem) return;
+      const btn = document.getElementById("modal-confirm-btn");
+      const statusDiv = document.getElementById("modal-status");
+
+      btn.disabled = true;
+      btn.innerText = "Reserving 1-of-1 Garment via gRPC...";
+
+      const idempotencyKey = "order-buyer-" + Math.random().toString(36).substring(2, 12);
+      const payload = {
+        item_id: selectedItem.id,
+        seller_id: selectedItem.seller_id,
+        buyer_id: "00000000-0000-0000-0000-000000000002",
+        total_amount_units: selectedItem.price_units,
+        currency: "USD",
+      };
+
+      try {
+        // Try calling order-service directly (:8003) or proxy
+        let orderEndpoint = "http://localhost:8003/api/v1/orders";
+        let res;
+        try {
+          res = await fetch(orderEndpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": idempotencyKey,
+            },
+            body: JSON.stringify(payload),
+          });
+        } catch (e) {
+          // If port 8003 direct is blocked by browser, try relative proxy
+          orderEndpoint = "/api/v1/orders";
+          res = await fetch(orderEndpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": idempotencyKey,
+            },
+            body: JSON.stringify(payload),
+          });
+        }
+
+        if (res.status === 409) {
+          statusDiv.style.display = "block";
+          statusDiv.style.background = "rgba(239, 68, 68, 0.2)";
+          statusDiv.style.color = "#fca5a5";
+          statusDiv.innerHTML = "<strong>Conflict (409):</strong> Item was already reserved or sold by another buyer.";
+          btn.innerText = "Item Unavailable";
+          return;
+        }
+
+        if (!res.ok) throw new Error("Order creation failed: " + res.statusText);
+        const order = await res.json();
+
+        statusDiv.style.display = "block";
+        statusDiv.style.background = "rgba(16, 185, 129, 0.2)";
+        statusDiv.style.color = "#6ee7b7";
+        statusDiv.innerHTML = 
+          `<strong>Escrow Locked Successfully!</strong><br>` +
+          `Order ID: <code>${order.id}</code><br>` +
+          `Status: <strong>${order.status}</strong> (Escrow Held)`;
+
+        btn.innerText = "Reserved & Confirmed";
+        setTimeout(() => {
+          buyModal.style.display = "none";
+          loadItems();
+        }, 3000);
+      } catch (err) {
+        statusDiv.style.display = "block";
+        statusDiv.style.background = "rgba(239, 68, 68, 0.2)";
+        statusDiv.style.color = "#fca5a5";
+        statusDiv.innerText = "Checkout failed: " + err.message;
+        btn.disabled = false;
+        btn.innerText = "Retry";
+      }
+    });
+
+    // Initial load
+    loadItems();
+  </script>
+</body>
+</html>

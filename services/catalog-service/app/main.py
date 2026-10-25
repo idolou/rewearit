@@ -86,6 +86,13 @@ app.include_router(api_v1_router)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
+@app.get("/", include_in_schema=False)
+@app.get("/explore", include_in_schema=False)
+async def buyer_catalog_page() -> FileResponse:
+    """Buyer marketplace catalog and visual search interface."""
+    return FileResponse(STATIC_DIR / "buyer_catalog.html", media_type="text/html")
+
+
 @app.get("/upload", include_in_schema=False)
 async def upload_page() -> FileResponse:
     """Interactive seller studio upload and preview page."""
