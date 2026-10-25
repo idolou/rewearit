@@ -32,7 +32,9 @@ async def classify_item(request: Request) -> dict[str, Any]:
                         file_bytes = await v.read()
                         if len(file_bytes) > 15 * 1024 * 1024:
                             raise HTTPException(status_code=413, detail="File size exceeds 15MB limit")
-                        files[k] = (v.filename or "upload.jpg", file_bytes, v.content_type or "image/jpeg")
+                        fname = getattr(v, "filename", "upload.jpg") or "upload.jpg"
+                        ctype = getattr(v, "content_type", "image/jpeg") or "image/jpeg"
+                        files[k] = (fname, file_bytes, ctype)
                     else:
                         data[k] = str(v)
                 resp = await client.post(target_url, files=files, data=data)

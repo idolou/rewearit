@@ -11,7 +11,7 @@ try:
     from rembg import remove as rembg_remove
     _rembg_available = True
 except ImportError:
-    rembg_remove = None  # type: ignore[assignment]
+    rembg_remove = None
 
 
 class StudioEnhancer:
@@ -45,20 +45,11 @@ class StudioEnhancer:
         """Fallback background isolation using multi-channel Euclidean color distance."""
         with Image.open(io.BytesIO(image_bytes)) as img:
             rgba = img.convert("RGBA")
-            w, h = rgba.size
-            corners = [
-                rgba.getpixel((0, 0)),
-                rgba.getpixel((w - 1, 0)),
-                rgba.getpixel((0, h - 1)),
-                rgba.getpixel((w - 1, h - 1)),
-            ]
-            bg_r = sum(c[0] for c in corners) / 4.0
-            bg_g = sum(c[1] for c in corners) / 4.0
-            bg_b = sum(c[2] for c in corners) / 4.0
-
             arr = np.array(rgba, dtype=np.float32)
             rgb = arr[:, :, :3]
-            bg_vec = np.array([bg_r, bg_g, bg_b], dtype=np.float32)
+
+            # Average 4 corner pixel colors to estimate background
+            bg_vec = (arr[0, 0, :3] + arr[0, -1, :3] + arr[-1, 0, :3] + arr[-1, -1, :3]) / 4.0
 
             # Euclidean color distance across all 3 color channels
             dist = np.linalg.norm(rgb - bg_vec, axis=2)

@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint & Code Style (Ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Lint catalog-service
+        run: |
+          cd services/catalog-service
+          uv sync --all-extras
+          uv run ruff check
+
+      - name: Lint ai-worker
+        run: |
+          cd services/ai-worker
+          uv sync --all-extras
+          uv run ruff check
+
+      - name: Lint order-service
+        run: |
+          cd services/order-service
+          uv sync --all-extras
+          uv run ruff check
+
+      - name: Lint scripts and e2e tests
+        run: |
+          cd services/catalog-service
+          uv run ruff check ../../scripts ../../tests/e2e
+
+  typecheck:
+    name: Static Type Checking (Mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Typecheck catalog-service
+        run: |
+          cd services/catalog-service
+          uv sync --all-extras
+          uv run mypy app
+
+      - name: Typecheck ai-worker
+        run: |
+          cd services/ai-worker
+          uv sync --all-extras
+          uv run mypy app
+
+      - name: Typecheck order-service
+        run: |
+          cd services/order-service
+          uv sync --all-extras
+          uv run mypy app
+
+  test:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [catalog-service, ai-worker, order-service]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run service test suite
+        run: |
+          cd services/${{ matrix.service }}
+          uv sync --all-extras
+          uv run pytest -v
+
+  e2e-contracts:
+    name: Multi-Service E2E Lifecycle Contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run E2E lifecycle test
+        run: |
+          cd services/catalog-service
+          uv sync --all-extras
+          uv run pytest ../../tests/e2e/test_platform_lifecycle.py -v
+
+  docker-build:
+    name: Multi-Stage Container Builds
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: catalog-service
+            context: services/catalog-service
+          - service: ai-worker
+            context: services/ai-worker
+          - service: order-service
+            context: services/order-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.service }} container
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: false
+          tags: rewearit-${{ matrix.service }}:ci

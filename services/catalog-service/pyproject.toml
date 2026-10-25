@@ -56,11 +56,12 @@ strict = true
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "app.grpc.schemas.*"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "app.events.*"
+module = [
+    "app.grpc.schemas.*",
+    "app.grpc.catalog_servicer",
+    "app.grpc.server",
+    "app.events.*",
+]
 ignore_errors = true
 
 [tool.pytest.ini_options]

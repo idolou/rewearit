@@ -2,6 +2,7 @@
 import io
 import re
 
+import numpy as np
 from PIL import Image
 
 from app.core.logging import logger
@@ -71,14 +72,11 @@ def _detect_dominant_color_from_image(image_bytes: bytes) -> str:
             bottom = int(height * 0.75)
             center_crop = rgb_img.crop((left, top, right, bottom))
             small = center_crop.resize((30, 30))
-            pixels = [small.getpixel((x, y)) for x in range(30) for y in range(30)]
+            arr = np.array(small, dtype=np.float32)
 
-            if not pixels:
-                return "Black"
-
-            avg_r = sum(p[0] for p in pixels) / len(pixels)
-            avg_g = sum(p[1] for p in pixels) / len(pixels)
-            avg_b = sum(p[2] for p in pixels) / len(pixels)
+            avg_r = float(np.mean(arr[:, :, 0]))
+            avg_g = float(np.mean(arr[:, :, 1]))
+            avg_b = float(np.mean(arr[:, :, 2]))
             brightness = (avg_r + avg_g + avg_b) / 3.0
 
             if brightness < 50:

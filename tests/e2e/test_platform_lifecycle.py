@@ -3,8 +3,9 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from app.main import app as catalog_app
 from httpx import ASGITransport, AsyncClient
+
+from app.main import app as catalog_app
 
 # Minimal valid 1x1 JPEG bytes
 SAMPLE_JPEG_BYTES = (

@@ -2,6 +2,7 @@
 
 Event-driven resale apparel commerce platform with multimodal AI appraisal, pgvector visual search, and atomic 1-of-1 garment reservations.
 
+[![CI](https://github.com/idolou/rewearit/actions/workflows/ci.yml/badge.svg)](https://github.com/idolou/rewearit/actions/workflows/ci.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 [![Docker Compose](https://img.shields.io/badge/docker--compose-v2-green.svg)](deploy/docker-compose/docker-compose.yml)
 [![Kafka/Redpanda](https://img.shields.io/badge/streaming-Redpanda-red.svg)](https://redpanda.com/)
@@ -144,7 +145,7 @@ rewearit/
 
 | Service | Protocol / Port | Purpose |
 | :--- | :--- | :--- |
-| **`catalog-service`** | REST `:8001`, gRPC `:50051` | Garment catalog, pgvector vector search, Seller Studio UI (`/upload`) |
+| **`catalog-service`** | REST `:8001`, gRPC `:50051` | Garment catalog, pgvector vector search, Buyer Marketplace (`/`), Seller Studio (`/upload`) |
 | **`ai-worker`** | REST `:8002` | Studio background removal, VLM classification, CLIP embeddings |
 | **`order-service`** | REST `:8003` | Order transactions, Redis idempotency, escrow state machine |
 | **`Jaeger UI`** | HTTP `:16686` (OTLP `:4317`) | Distributed tracing across HTTP, gRPC, and Kafka |
@@ -171,6 +172,37 @@ Open [`http://localhost:8001/upload`](http://localhost:8001/upload) in your brow
 curl -X POST http://localhost:8001/api/v1/items/classify \
   -F "file=@photo.jpg" \
   -F "title=Levi's Denim Jacket"
+```
+
+---
+
+## Buyer Marketplace & Visual Search
+
+Buyers can explore curated second-hand listings or find exact and visually similar garments using their own photos:
+1. **Interactive Marketplace**: Filter listings by category, brand, condition, and price in real time at [`http://localhost:8001/`](http://localhost:8001/) (or `/explore`).
+2. **Visual Photo Search**: Drag-and-drop or select an apparel photo. The backend computes a 512-dimensional CLIP embedding and queries PostgreSQL via `pgvector` cosine similarity (`<=>` operator):
+   ```bash
+   curl -X POST http://localhost:8001/api/v1/items/search/visual-image \
+     -F "file=@garment_reference.jpg" \
+     -F "limit=10"
+   ```
+3. **Escrow Checkout**: Reserve garments directly in the UI with instant 1-of-1 lock verification and double-buy protection.
+
+---
+
+## Automated E2E Verification & Smoke Test
+
+ReWearIt includes a zero-dependency automated verification script (`scripts/verify_e2e.py`) that exercises the entire multi-service lifecycle against the live Docker mesh:
+- AI Studio background removal and attribute classification
+- Catalog listing publication and pgvector visual similarity lookup
+- Atomic 1-of-1 gRPC reservation
+- Race condition / double-buy conflict rejection (`409 Conflict`)
+- Escrow settlement (`COMPLETED`) and stock transition to `SOLD`
+- Jaeger distributed trace validation
+
+```bash
+# Execute against running cluster
+python3 scripts/verify_e2e.py
 ```
 
 ---
@@ -245,10 +277,9 @@ curl -X POST http://localhost:8003/api/v1/orders/<ORDER_ID_FROM_STEP_2>/complete
 
 ---
 
-## Running Unit & Integration Tests
+## Running Tests & Quality Gates
 
-Each service contains isolated pytest suites:
-
+### Unit & Integration Suites
 ```bash
 # Catalog Service
 cd services/catalog-service && uv run pytest
@@ -258,6 +289,22 @@ cd services/ai-worker && uv run pytest
 
 # Order Service
 cd services/order-service && uv run pytest
+```
+
+### Multi-Service E2E Lifecycle Contract Test
+```bash
+cd services/catalog-service && uv run pytest ../../tests/e2e/test_platform_lifecycle.py
+```
+
+### Code Quality (Ruff & Mypy)
+```bash
+# Linting
+uv run ruff check services/ scripts/ tests/
+
+# Type Checking
+cd services/catalog-service && uv run mypy app
+cd services/ai-worker && uv run mypy app
+cd services/order-service && uv run mypy app
 ```
 
 ---
