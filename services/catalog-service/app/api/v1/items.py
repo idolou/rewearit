@@ -7,16 +7,41 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, s
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import AuthenticatedUser, get_current_user
 from app.core.config import settings
 from app.core.database import get_session
 from app.models.item import ConditionGrade, Item, ItemBase, ItemStatus
-from app.services.catalog_service import CatalogService
+from app.services.catalog_service import (
+    CatalogService,
+    ItemNotFoundError,
+    ItemOwnershipError,
+    ItemStateConflictError,
+)
 
 router = APIRouter(prefix="/items", tags=["Catalog Items"])
 
 
+class ItemCreateRequest(BaseModel):
+    seller_id: uuid.UUID | None = None  # Ignored; derived from authenticated JWT
+    title: str = Field(max_length=255)
+    description: str = Field(default="")
+    category: str
+    brand: str = Field(max_length=100)
+    size: str = Field(max_length=50)
+    color: str | None = Field(default=None, max_length=50)
+    material: str | None = Field(default=None, max_length=100)
+    condition_grade: ConditionGrade = Field(default=ConditionGrade.GOOD)
+    price_currency: str = Field(default="USD", max_length=3)
+    price_units: int = Field(gt=0)
+    price_nanos: int = Field(default=0, ge=0)
+    image_urls: list[str] = Field(default_factory=list)
+
+
 @router.post("/classify")
-async def classify_item(request: Request) -> dict[str, Any]:
+async def classify_item(
+    request: Request,
+    _current_user: AuthenticatedUser = Depends(get_current_user),
+) -> dict[str, Any]:
     """Proxy image upload to ai-worker for studio background removal and auto-fill."""
     content_type = request.headers.get("content-type", "")
     target_url = f"{settings.AI_WORKER_URL}/api/v1/classify"
@@ -67,12 +92,45 @@ class VisualSearchResultItem(BaseModel):
 
 @router.post("", response_model=Item, status_code=status.HTTP_201_CREATED)
 async def create_item(
-    item_in: ItemBase,
+    item_in: ItemCreateRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     x_correlation_id: str | None = Header(default=None),
 ) -> Item:
-    """Create a new apparel listing and emit an ItemCreatedEvent."""
-    return await CatalogService.create_item(session, item_in, correlation_id=x_correlation_id)
+    """Create a new apparel listing owned by the authenticated seller."""
+    item_base = ItemBase(
+        seller_id=current_user.id,
+        title=item_in.title,
+        description=item_in.description,
+        category=item_in.category,
+        brand=item_in.brand,
+        size=item_in.size,
+        color=item_in.color,
+        material=item_in.material,
+        condition_grade=item_in.condition_grade,
+        price_currency=item_in.price_currency,
+        price_units=item_in.price_units,
+        price_nanos=item_in.price_nanos,
+        image_urls=item_in.image_urls,
+    )
+    return await CatalogService.create_item(session, item_base, correlation_id=x_correlation_id)
+
+
+@router.delete("/{item_id}", response_model=Item)
+async def delist_item(
+    item_id: uuid.UUID,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Item:
+    """Delist (cancel) an active listing owned by the authenticated seller."""
+    try:
+        return await CatalogService.delist_item(session, item_id, seller_id=current_user.id)
+    except ItemNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ItemOwnershipError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    except ItemStateConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
 
 
 @router.get("/{item_id}", response_model=Item)
@@ -96,6 +154,7 @@ async def list_items(
     brand: str | None = Query(default=None),
     condition_grade: ConditionGrade | None = Query(default=None),
     status: ItemStatus | None = Query(default=None),
+    seller_id: uuid.UUID | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
@@ -107,6 +166,7 @@ async def list_items(
         brand=brand,
         condition_grade=condition_grade,
         status=status,
+        seller_id=seller_id,
         limit=limit,
         offset=offset,
     )

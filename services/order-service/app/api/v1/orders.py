@@ -1,10 +1,12 @@
 """FastAPI router for Order management, checkout transactions, and state transitions."""
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.catalog_client import CatalogGrpcClient
+from app.core.auth import AuthenticatedUser, get_current_user
 from app.core.database import get_session
 from app.events.producer import OrderEventProducer
 from app.models.order import (
@@ -19,9 +21,11 @@ from app.services.order_service import (
     DuplicateProcessingError,
     InvalidStateTransitionError,
     ItemReservationError,
+    OrderForbiddenError,
     OrderNotFoundError,
     OrderService,
     PriceMismatchError,
+    SelfPurchaseError,
 )
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
@@ -55,6 +59,7 @@ def get_order_service() -> OrderService:
 async def create_order(
     req: OrderCreateRequest,
     idempotency_key: str = Header(..., alias="Idempotency-Key", description="Unique idempotency transaction key"),
+    current_user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     order_service: OrderService = Depends(get_order_service),
 ) -> OrderResponse:
@@ -65,8 +70,20 @@ async def create_order(
         )
 
     try:
-        order = await order_service.create_order(session, req, idempotency_key.strip())
+        order = await order_service.create_order(
+            session, req, idempotency_key.strip(), buyer_id=current_user.id
+        )
         return OrderResponse.model_validate(order, from_attributes=True)
+    except SelfPurchaseError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+    except OrderForbiddenError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        ) from e
     except ItemReservationError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -91,37 +108,52 @@ async def create_order(
 )
 async def get_order(
     order_id: uuid.UUID,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     order_service: OrderService = Depends(get_order_service),
 ) -> OrderResponse:
     try:
-        order = await order_service.get_order(session, order_id)
+        order = await order_service.get_order(session, order_id, actor_id=current_user.id)
         return OrderResponse.model_validate(order, from_attributes=True)
     except OrderNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Order {order_id} not found",
         ) from e
+    except OrderForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
 
 
 @router.get(
     "",
     response_model=list[OrderResponse],
-    summary="List orders with optional filtering",
+    summary="List orders belonging to the authenticated user",
 )
 async def list_orders(
-    buyer_id: uuid.UUID | None = Query(None, description="Filter by buyer UUID"),
-    seller_id: uuid.UUID | None = Query(None, description="Filter by seller UUID"),
+    role: Literal["all", "buyer", "seller"] = Query("all", description="Filter by participant role"),
+    buyer_id: uuid.UUID | None = Query(None, description="Optional buyer UUID (must match caller)"),
+    seller_id: uuid.UUID | None = Query(None, description="Optional seller UUID (must match caller)"),
     order_status: OrderStatus | None = Query(None, alias="status", description="Filter by order status"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    current_user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     order_service: OrderService = Depends(get_order_service),
 ) -> list[OrderResponse]:
+    if buyer_id is not None and buyer_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot list another buyer's orders")
+    if seller_id is not None and seller_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot list another seller's orders")
+
+    eff_buyer = current_user.id if (role == "buyer" or buyer_id is not None) else None
+    eff_seller = current_user.id if (role == "seller" or seller_id is not None) else None
+    participant = current_user.id if (eff_buyer is None and eff_seller is None) else None
+
     orders = await order_service.list_orders(
         session=session,
-        buyer_id=buyer_id,
-        seller_id=seller_id,
+        buyer_id=eff_buyer,
+        seller_id=eff_seller,
+        participant_id=participant,
         status=order_status,
         limit=limit,
         offset=offset,
@@ -132,19 +164,24 @@ async def list_orders(
 @router.post(
     "/{order_id}/ship",
     response_model=OrderResponse,
-    summary="Mark order as SHIPPED with tracking number",
+    summary="Mark order as SHIPPED with tracking number (seller only)",
 )
 async def ship_order(
     order_id: uuid.UUID,
     req: OrderShipRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     order_service: OrderService = Depends(get_order_service),
 ) -> OrderResponse:
     try:
-        order = await order_service.ship_order(session, order_id, req.tracking_number)
+        order = await order_service.ship_order(
+            session, order_id, req.tracking_number, seller_id=current_user.id
+        )
         return OrderResponse.model_validate(order, from_attributes=True)
     except OrderNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Order {order_id} not found") from e
+    except OrderForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
     except InvalidStateTransitionError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
@@ -152,18 +189,21 @@ async def ship_order(
 @router.post(
     "/{order_id}/complete",
     response_model=OrderResponse,
-    summary="Complete order, release escrow funds, and trigger garment sold event",
+    summary="Complete order, release escrow funds, and mark garment SOLD (buyer only)",
 )
 async def complete_order(
     order_id: uuid.UUID,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     order_service: OrderService = Depends(get_order_service),
 ) -> OrderResponse:
     try:
-        order = await order_service.complete_order(session, order_id)
+        order = await order_service.complete_order(session, order_id, buyer_id=current_user.id)
         return OrderResponse.model_validate(order, from_attributes=True)
     except OrderNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Order {order_id} not found") from e
+    except OrderForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
     except InvalidStateTransitionError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
@@ -171,18 +211,23 @@ async def complete_order(
 @router.post(
     "/{order_id}/cancel",
     response_model=OrderResponse,
-    summary="Cancel order, refund buyer, and release garment reservation",
+    summary="Cancel order, refund buyer, and release garment reservation (buyer or seller)",
 )
 async def cancel_order(
     order_id: uuid.UUID,
     req: OrderCancelRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     order_service: OrderService = Depends(get_order_service),
 ) -> OrderResponse:
     try:
-        order = await order_service.cancel_order(session, order_id, reason=req.reason)
+        order = await order_service.cancel_order(
+            session, order_id, reason=req.reason, actor_id=current_user.id
+        )
         return OrderResponse.model_validate(order, from_attributes=True)
     except OrderNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Order {order_id} not found") from e
+    except OrderForbiddenError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
     except InvalidStateTransitionError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e

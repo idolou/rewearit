@@ -43,5 +43,9 @@ class Settings(BaseSettings):
     AI_WORKER_URL: str = "http://localhost:8002"
     ORDER_SERVICE_URL: str = "http://localhost:8003"
 
+    # Auth (shared stateless HS256 JWT secret with order-service)
+    JWT_SECRET: str = "dev-insecure-change-in-prod-rewearit-secret"
+    JWT_EXPIRE_SECONDS: int = 86400
+
 
 settings = Settings()

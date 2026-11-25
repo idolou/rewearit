@@ -16,8 +16,10 @@ from app.services.order_service import (
     DuplicateProcessingError,
     InvalidStateTransitionError,
     ItemReservationError,
+    OrderForbiddenError,
     OrderService,
     PriceMismatchError,
+    SelfPurchaseError,
 )
 
 
@@ -259,3 +261,53 @@ async def test_order_lifecycle_transitions(
     # 3. Trying to ship completed order should fail
     with pytest.raises(InvalidStateTransitionError):
         await service.ship_order(mock_session, order_id, tracking_number="ANOTHER")
+
+
+@pytest.mark.asyncio
+async def test_self_purchase_and_role_ownership_enforced(
+    mock_catalog_client: MagicMock,
+    mock_idempotency_mgr: MagicMock,
+    mock_producer: MagicMock,
+    mock_session: MagicMock,
+) -> None:
+    same_user = uuid.uuid4()
+    item_id = uuid.uuid4()
+    mock_catalog_client.get_item = AsyncMock(
+        return_value=CatalogItemSnapshot(
+            item_id=item_id,
+            seller_id=same_user,
+            price_units=90,
+            price_nanos=0,
+            currency="USD",
+        )
+    )
+    service = OrderService(
+        catalog_client=mock_catalog_client,
+        idempotency_mgr=mock_idempotency_mgr,
+        producer=mock_producer,
+    )
+    req = OrderCreateRequest(item_id=item_id, total_amount_units=90, currency="USD")
+    with pytest.raises(SelfPurchaseError):
+        await service.create_order(mock_session, req, idempotency_key="key-self", buyer_id=same_user)
+    mock_catalog_client.release_item.assert_awaited_once()
+
+    # Ownership: buyer cannot ship; seller cannot complete
+    buyer_id = uuid.uuid4()
+    seller_id = uuid.uuid4()
+    order = Order(
+        id=uuid.uuid4(),
+        buyer_id=buyer_id,
+        seller_id=seller_id,
+        item_id=item_id,
+        status=OrderStatus.ESCROW_HELD,
+        total_amount_units=90,
+        idempotency_key="key-own",
+    )
+    res = MagicMock()
+    res.scalar_one_or_none.return_value = order
+    mock_session.execute = AsyncMock(return_value=res)
+
+    with pytest.raises(OrderForbiddenError):
+        await service.ship_order(mock_session, order.id, tracking_number="TRACK1", seller_id=buyer_id)
+    with pytest.raises(OrderForbiddenError):
+        await service.complete_order(mock_session, order.id, buyer_id=seller_id)

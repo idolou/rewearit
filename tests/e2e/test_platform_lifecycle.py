@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.core.auth import create_access_token
 from app.main import app as catalog_app
 
 # Minimal valid 1x1 JPEG bytes
@@ -47,6 +48,9 @@ async def test_full_platform_lifecycle_contract() -> None:
         },
     }
 
+    seller_token = create_access_token(mock_seller_id, "seller@example.com", "E2E Seller")
+    seller_headers = {"Authorization": f"Bearer {seller_token}"}
+
     transport = ASGITransport(app=catalog_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # Step 1: Healthcheck
@@ -63,7 +67,7 @@ async def test_full_platform_lifecycle_contract() -> None:
             mock_ai_post.return_value = mock_resp
 
             files = {"file": ("garment.jpg", synthetic_image, "image/jpeg")}
-            classify_res = await client.post("/api/v1/items/classify", files=files)
+            classify_res = await client.post("/api/v1/items/classify", files=files, headers=seller_headers)
             assert classify_res.status_code == 200
             cdata = classify_res.json()
             assert cdata["clean_image_url"] == mock_clean_url
@@ -107,7 +111,7 @@ async def test_full_platform_lifecycle_contract() -> None:
         )
 
         with patch("app.services.catalog_service.CatalogService.create_item", new=AsyncMock(return_value=created_item_mock)):
-            create_res = await client.post("/api/v1/items", json=item_payload)
+            create_res = await client.post("/api/v1/items", json=item_payload, headers=seller_headers)
             assert create_res.status_code == 201
             item_data = create_res.json()
             assert item_data["title"] == "Levi's Classic Blue Denim Jacket"

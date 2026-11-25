@@ -40,5 +40,8 @@ class Settings(BaseSettings):
     OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None
     OTEL_EXPORTER_OTLP_INSECURE: bool = True
 
+    # Auth (shared stateless HS256 JWT secret with catalog-service)
+    JWT_SECRET: str = "dev-insecure-change-in-prod-rewearit-secret"
+
 
 settings = Settings()

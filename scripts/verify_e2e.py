@@ -146,11 +146,39 @@ def run_e2e_verification() -> int:
     session_id = uuid.uuid4().hex[:8]
     test_title = f"Vintage Denim Jacket - Run {session_id}"
 
+    # Step 0: Register Seller, Buyer 1, and Buyer 2 (JWT Auth)
+    log_step(0, "Register Seller & Buyers (JWT Auth)")
+    accounts: dict[str, dict] = {}
+    for role in ("seller", "buyer1", "buyer2"):
+        reg_status, reg_data = http_request(
+            f"{CATALOG_URL}/api/v1/auth/register",
+            method="POST",
+            data={
+                "email": f"{role}-{session_id}@example.com",
+                "password": "TestPassword123!",
+                "display_name": f"E2E {role.title()}",
+            },
+        )
+        if reg_status != 201 or not isinstance(reg_data, dict) or not reg_data.get("access_token"):
+            log_fail(f"Account registration failed for {role} (HTTP {reg_status}): {reg_data}")
+            return 1
+        accounts[role] = reg_data
+    seller_headers = {"Authorization": f"Bearer {accounts['seller']['access_token']}"}
+    buyer1_headers = {"Authorization": f"Bearer {accounts['buyer1']['access_token']}"}
+    buyer2_headers = {"Authorization": f"Bearer {accounts['buyer2']['access_token']}"}
+    log_pass("Registered 3 accounts and issued HS256 JWTs")
+
     # Step 1: AI Studio Background Removal & Intake
     log_step(1, "AI Studio Background Removal & Metadata Intake")
     files = {"file": ("jacket.jpg", SAMPLE_JPEG, "image/jpeg")}
     form_data = {"title": test_title, "description": "100% cotton blue denim jacket"}
-    status, cdata = http_request(f"{CATALOG_URL}/api/v1/items/classify", method="POST", data=form_data, files=files)
+    status, cdata = http_request(
+        f"{CATALOG_URL}/api/v1/items/classify",
+        method="POST",
+        data=form_data,
+        files=files,
+        headers=dict(seller_headers),
+    )
     if status != 200 or not isinstance(cdata, dict):
         log_fail(f"Classification failed (HTTP {status}): {cdata}")
         return 1
@@ -175,10 +203,8 @@ def run_e2e_verification() -> int:
 
     # Step 2: Publish Item to Catalog with Seller Custom Price
     log_step(2, "Publish Item to Catalog & Wait for Async AI Activation")
-    seller_id = str(uuid.uuid4())
     chosen_price = price_range.get("target_price", 55)
     item_payload = {
-        "seller_id": seller_id,
         "title": test_title,
         "description": "Authenticated vintage jacket from automated E2E run",
         "category": auto_fill.get("category", "Outerwear"),
@@ -192,7 +218,12 @@ def run_e2e_verification() -> int:
         "price_nanos": 0,
         "image_urls": [clean_img_url],
     }
-    status, item_data = http_request(f"{CATALOG_URL}/api/v1/items", method="POST", data=item_payload)
+    status, item_data = http_request(
+        f"{CATALOG_URL}/api/v1/items",
+        method="POST",
+        data=item_payload,
+        headers=dict(seller_headers),
+    )
     if status != 201 or not isinstance(item_data, dict):
         log_fail(f"Item publication failed (HTTP {status}): {item_data}")
         return 1
@@ -226,18 +257,37 @@ def run_e2e_verification() -> int:
     top_sim = next((r.get("similarity") for r in search_results if r.get("item", {}).get("id") == item_id), None)
     log_pass(f"Visual search matched published item among {len(search_results)} candidates (similarity={top_sim})")
 
-    # Step 4: Order Placement & Atomic 1-of-1 Escrow Lock
+    # Step 4: Order Placement & Atomic 1-of-1 Escrow Lock (incl. auth & price guards)
     log_step(4, "Place Order & Atomic 1-of-1 Garment Lock")
+    unauth_status, _ = http_request(
+        f"{ORDER_URL}/api/v1/orders",
+        method="POST",
+        data={"item_id": item_id, "total_amount_units": chosen_price, "currency": "USD"},
+        headers={"Idempotency-Key": f"e2e-unauth-{session_id}"},
+    )
+    if unauth_status != 401:
+        log_fail(f"Expected 401 for unauthenticated checkout, got HTTP {unauth_status}")
+        return 1
+    log_pass("Unauthenticated checkout blocked with HTTP 401")
+
+    tamper_status, _ = http_request(
+        f"{ORDER_URL}/api/v1/orders",
+        method="POST",
+        data={"item_id": item_id, "total_amount_units": 1, "currency": "USD"},
+        headers={**buyer1_headers, "Idempotency-Key": f"e2e-tamper-{session_id}"},
+    )
+    if tamper_status != 409:
+        log_fail(f"Expected 409 for $1 price-tampered checkout, got HTTP {tamper_status}")
+        return 1
+    log_pass("Price-tampered checkout ($1) blocked with HTTP 409 and reservation released")
+
     idempotency_key = f"e2e-order-{session_id}"
-    buyer_id = str(uuid.uuid4())
     order_payload = {
         "item_id": item_id,
-        "seller_id": seller_id,
-        "buyer_id": buyer_id,
         "total_amount_units": chosen_price,
         "currency": "USD",
     }
-    headers = {"Idempotency-Key": idempotency_key}
+    headers = {**buyer1_headers, "Idempotency-Key": idempotency_key}
     status, order_data = http_request(f"{ORDER_URL}/api/v1/orders", method="POST", data=order_payload, headers=headers)
     if status != 201 or not isinstance(order_data, dict):
         log_fail(f"Order placement failed (HTTP {status}): {order_data}")
@@ -247,19 +297,11 @@ def run_e2e_verification() -> int:
 
     # Step 5: Concurrency Guard (Attempt Double-Buy on 1-of-1 Item)
     log_step(5, "Concurrency Double-Buy Prevention Check")
-    another_buyer_id = str(uuid.uuid4())
-    conflict_payload = {
-        "item_id": item_id,
-        "seller_id": seller_id,
-        "buyer_id": another_buyer_id,
-        "total_amount_units": chosen_price,
-        "currency": "USD",
-    }
     status, conf_res = http_request(
         f"{ORDER_URL}/api/v1/orders",
         method="POST",
-        data=conflict_payload,
-        headers={"Idempotency-Key": f"e2e-order-duplicate-{session_id}"},
+        data=order_payload,
+        headers={**buyer2_headers, "Idempotency-Key": f"e2e-order-duplicate-{session_id}"},
     )
     if status == 409:
         log_pass("Double-buy correctly rejected with HTTP 409 Conflict (Strict 1-of-1 lock upheld)")
@@ -267,15 +309,41 @@ def run_e2e_verification() -> int:
         log_fail(f"Expected 409 Conflict on double-buy, got HTTP {status}: {conf_res}")
         return 1
 
-    # Step 6: Complete Order & Release Escrow
-    log_step(6, "Order Delivery & Escrow Settlement")
-    status, completed_order = http_request(f"{ORDER_URL}/api/v1/orders/{order_id}/complete", method="POST")
+    # Step 6: Seller Ships -> Buyer Confirms Delivery & Escrow Settlement
+    log_step(6, "Seller Shipment, Ownership Guards & Escrow Settlement")
+    wrong_ship, _ = http_request(
+        f"{ORDER_URL}/api/v1/orders/{order_id}/ship",
+        method="POST",
+        data={"tracking_number": "1Z999AA10123456784"},
+        headers=dict(buyer1_headers),
+    )
+    if wrong_ship != 403:
+        log_fail(f"Expected 403 when buyer tries to ship order, got HTTP {wrong_ship}")
+        return 1
+    log_pass("Buyer blocked from shipping order (HTTP 403)")
+
+    ship_status, shipped = http_request(
+        f"{ORDER_URL}/api/v1/orders/{order_id}/ship",
+        method="POST",
+        data={"tracking_number": "1Z999AA10123456784"},
+        headers=dict(seller_headers),
+    )
+    if ship_status != 200 or not isinstance(shipped, dict) or shipped.get("status") != "SHIPPED":
+        log_fail(f"Seller ship failed (HTTP {ship_status}): {shipped}")
+        return 1
+    log_pass(f"Seller marked order SHIPPED (tracking={shipped['tracking_number']})")
+
+    status, completed_order = http_request(
+        f"{ORDER_URL}/api/v1/orders/{order_id}/complete",
+        method="POST",
+        headers=dict(buyer1_headers),
+    )
     if status != 200 or not isinstance(completed_order, dict):
         log_fail(f"Order completion failed (HTTP {status}): {completed_order}")
         return 1
-    log_pass(f"Order completed: id={order_id}, status={completed_order['status']}")
+    log_pass(f"Buyer confirmed delivery: id={order_id}, status={completed_order['status']}")
 
-    # Wait for Kafka order.completed -> catalog-service SOLD transition
+    # Verify catalog item transitioned to SOLD
     marked_sold = False
     for _ in range(20):
         st, polled = http_request(f"{CATALOG_URL}/api/v1/items/{item_id}")
@@ -286,7 +354,17 @@ def run_e2e_verification() -> int:
     if not marked_sold:
         log_fail(f"Item {item_id} did not transition to SOLD within 5s after order completion")
         return 1
-    log_pass(f"Async Kafka order.completed propagated: item {item_id} is now SOLD")
+    log_pass(f"Catalog updated: item {item_id} is now SOLD")
+
+    # Verify Seller Dashboard sees the completed payout
+    seller_orders_st, seller_orders = http_request(
+        f"{CATALOG_URL}/api/v1/orders?role=seller",
+        headers=dict(seller_headers),
+    )
+    if seller_orders_st != 200 or not isinstance(seller_orders, list) or not any(o.get("id") == order_id for o in seller_orders):
+        log_fail(f"Seller dashboard orders check failed (HTTP {seller_orders_st}): {seller_orders}")
+        return 1
+    log_pass(f"Seller dashboard proxy returned completed payout order ({order_id[:8]})")
 
     # Step 7: Distributed Traces Verification (Jaeger)
     log_step(7, "Inspect Distributed Tracing in Jaeger")

@@ -1,5 +1,6 @@
 """Catalog service layer coordinating persistence and Kafka event emission."""
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +9,18 @@ from sqlmodel import col
 from app.core.logging import logger
 from app.events.producer import producer
 from app.models.item import ConditionGrade, Item, ItemBase, ItemStatus
+
+
+class ItemNotFoundError(Exception):
+    """Raised when a catalog item does not exist."""
+
+
+class ItemOwnershipError(Exception):
+    """Raised when a user tries to modify another seller's listing."""
+
+
+class ItemStateConflictError(Exception):
+    """Raised when an item's current status blocks the requested action."""
 
 
 class CatalogService:
@@ -45,6 +58,7 @@ class CatalogService:
         brand: str | None = None,
         condition_grade: ConditionGrade | None = None,
         status: ItemStatus | None = None,
+        seller_id: uuid.UUID | None = None,
         limit: int = 20,
         offset: int = 0,
     ) -> list[Item]:
@@ -58,10 +72,35 @@ class CatalogService:
             query = query.where(col(Item.condition_grade) == condition_grade)
         if status:
             query = query.where(col(Item.status) == status)
+        if seller_id:
+            query = query.where(col(Item.seller_id) == seller_id)
 
         query = query.order_by(col(Item.created_at).desc()).limit(limit).offset(offset)
         result = await session.execute(query)
         return list(result.scalars().all())
+
+    @staticmethod
+    async def delist_item(
+        session: AsyncSession,
+        item_id: uuid.UUID,
+        seller_id: uuid.UUID,
+    ) -> Item:
+        """Cancel an ACTIVE or ANALYZING listing owned by seller_id."""
+        result = await session.execute(select(Item).where(col(Item.id) == item_id).with_for_update())
+        item = result.scalar_one_or_none()
+        if item is None:
+            raise ItemNotFoundError(f"Item '{item_id}' not found")
+        if item.seller_id != seller_id:
+            raise ItemOwnershipError("You can only delist your own listings")
+        if item.status not in (ItemStatus.ACTIVE, ItemStatus.ANALYZING, ItemStatus.DRAFT):
+            raise ItemStateConflictError(f"Cannot delist item in status {item.status.value}")
+
+        item.status = ItemStatus.CANCELLED
+        item.updated_at = datetime.now(UTC)
+        session.add(item)
+        await session.commit()
+        await session.refresh(item)
+        return item
 
     @staticmethod
     async def search_visual(

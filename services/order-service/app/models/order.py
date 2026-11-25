@@ -56,8 +56,8 @@ class Order(OrderBase, table=True):
 # API DTOs
 class OrderCreateRequest(BaseModel):
     item_id: uuid.UUID
-    seller_id: uuid.UUID
-    buyer_id: uuid.UUID
+    seller_id: uuid.UUID | None = None  # Ignored; derived from catalog item
+    buyer_id: uuid.UUID | None = None   # Ignored; derived from authenticated JWT
     total_amount_units: int = Field(gt=0)
     total_amount_nanos: int = Field(default=0, ge=0)
     currency: str = Field(default="USD", max_length=3)

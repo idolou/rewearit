@@ -385,7 +385,9 @@
       <a href="/" class="logo">ReWearIt Marketplace</a>
       <div class="nav-links">
         <a href="/" class="nav-link active">Browse</a>
+        <a href="/seller" class="nav-link">Dashboard</a>
         <a href="/upload" class="btn-seller">+ Sell an Item (Studio AI)</a>
+        <span id="rw-auth-slot"></span>
       </div>
     </div>
   </header>
@@ -471,6 +473,7 @@
     </div>
   </div>
 
+  <script src="/static/auth.js"></script>
   <script>
     let allItems = [];
     const renderedItemsById = new Map();
@@ -633,17 +636,19 @@
       selectedItem = renderedItemsById.get(itemId) || allItems.find(i => i.id === itemId);
       if (!selectedItem) return;
 
-      // Reuse one idempotency key across retries for this checkout modal session
-      currentIdempotencyKey = "order-buyer-" + (
-        (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).substring(2, 12)
-      );
+      ReWearAuth.requireAuth(() => {
+        // Reuse one idempotency key across retries for this checkout modal session
+        currentIdempotencyKey = "order-buyer-" + (
+          (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).substring(2, 12)
+        );
 
-      document.getElementById("modal-item-title").innerText = selectedItem.title;
-      document.getElementById("modal-item-price").innerText = `$${selectedItem.price_units} USD`;
-      document.getElementById("modal-status").style.display = "none";
-      document.getElementById("modal-confirm-btn").disabled = false;
-      document.getElementById("modal-confirm-btn").innerText = "Lock Escrow & Buy";
-      buyModal.style.display = "flex";
+        document.getElementById("modal-item-title").innerText = selectedItem.title;
+        document.getElementById("modal-item-price").innerText = `$${selectedItem.price_units} USD`;
+        document.getElementById("modal-status").style.display = "none";
+        document.getElementById("modal-confirm-btn").disabled = false;
+        document.getElementById("modal-confirm-btn").innerText = "Lock Escrow & Buy";
+        buyModal.style.display = "flex";
+      });
     };
 
     document.getElementById("modal-cancel-btn").addEventListener("click", () => {
@@ -660,8 +665,6 @@
 
       const payload = {
         item_id: selectedItem.id,
-        seller_id: selectedItem.seller_id,
-        buyer_id: "00000000-0000-0000-0000-000000000002",
         total_amount_units: selectedItem.price_units,
         currency: selectedItem.price_currency || "USD",
       };
@@ -669,23 +672,34 @@
       try {
         const res = await fetch("/api/v1/orders", {
           method: "POST",
-          headers: {
+          headers: ReWearAuth.authHeaders({
             "Content-Type": "application/json",
             "Idempotency-Key": currentIdempotencyKey,
-          },
+          }),
           body: JSON.stringify(payload),
         });
 
+        if (res.status === 401) {
+          ReWearAuth.openModal("login");
+          btn.disabled = false;
+          btn.innerText = "Lock Escrow & Buy";
+          return;
+        }
+
         if (res.status === 409) {
+          const errData = await res.json().catch(() => ({}));
           statusDiv.style.display = "block";
           statusDiv.style.background = "rgba(239, 68, 68, 0.2)";
           statusDiv.style.color = "#fca5a5";
-          statusDiv.innerHTML = "<strong>Conflict (409):</strong> Item was already reserved or sold by another buyer.";
+          statusDiv.innerText = "Conflict (409): " + (errData.detail || "Item was already reserved or sold by another buyer.");
           btn.innerText = "Item Unavailable";
           return;
         }
 
-        if (!res.ok) throw new Error("Order creation failed: " + res.statusText);
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || ("Order creation failed: " + res.statusText));
+        }
         const order = await res.json();
 
         statusDiv.style.display = "block";
@@ -712,6 +726,7 @@
     });
 
     // Initial load
+    ReWearAuth.init();
     loadItems();
   </script>
 </body>

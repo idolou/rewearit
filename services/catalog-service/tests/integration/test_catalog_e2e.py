@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.core.auth import create_access_token
 from app.core.database import async_session_maker, init_db
 from app.events.consumer import consumer
 from app.grpc.catalog_servicer import CatalogServicer
@@ -39,9 +40,14 @@ async def test_complete_catalog_lifecycle_e2e() -> None:
     }
 
     # 2. Create listing via FastAPI REST API
+    token = create_access_token(uuid.UUID(seller_id), "e2e-seller@example.com", "E2E Seller")
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        create_resp = await client.post("/api/v1/items", json=create_payload)
+        create_resp = await client.post(
+            "/api/v1/items",
+            json=create_payload,
+            headers={"Authorization": f"Bearer {token}"},
+        )
         assert create_resp.status_code == 201
         created_data = create_resp.json()
         item_id = created_data["id"]

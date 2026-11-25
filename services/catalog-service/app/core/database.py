@@ -39,6 +39,9 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db() -> None:
     """Ensure database tables and incremental columns are created."""
+    import app.models.item  # noqa: F401
+    import app.models.user  # noqa: F401
+
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
         if conn.dialect.name == "postgresql":

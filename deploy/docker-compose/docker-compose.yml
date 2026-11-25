@@ -173,6 +173,7 @@ services:
       GRPC_PORT: 50051
       AI_WORKER_URL: http://ai-worker:8002
       ORDER_SERVICE_URL: http://order-service:8003
+      JWT_SECRET: ${JWT_SECRET:-dev-insecure-change-in-prod-rewearit-secret}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
       OTEL_EXPORTER_OTLP_INSECURE: "true"
       OTEL_SERVICE_NAME: rewearit-catalog-service
@@ -242,6 +243,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       CATALOG_GRPC_TARGET: catalog-service:50051
       REST_PORT: 8003
+      JWT_SECRET: ${JWT_SECRET:-dev-insecure-change-in-prod-rewearit-secret}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
       OTEL_EXPORTER_OTLP_INSECURE: "true"
       OTEL_SERVICE_NAME: rewearit-order-service

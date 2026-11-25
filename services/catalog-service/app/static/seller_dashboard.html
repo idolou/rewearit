@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ReWearIt — Seller & Orders Dashboard</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --card: #1e293b;
+      --border: #334155;
+      --primary: #38bdf8;
+      --accent: #10b981;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    header {
+      background: rgba(15, 23, 42, 0.9);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 1.5rem;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .nav-container {
+      max-width: 1150px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .logo {
+      font-size: 1.35rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-decoration: none;
+    }
+    .nav-links { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+    .nav-link { color: var(--muted); text-decoration: none; font-size: 0.95rem; font-weight: 500; }
+    .nav-link:hover, .nav-link.active { color: var(--primary); }
+    .btn-primary {
+      background: linear-gradient(135deg, #38bdf8, #6366f1);
+      color: #fff;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      text-decoration: none;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    .container { max-width: 1150px; margin: 0 auto; padding: 2rem 1.5rem; }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+    }
+    .stat-label { color: var(--muted); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .stat-value { font-size: 1.8rem; font-weight: 800; margin-top: 0.3rem; }
+    .section-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 1.75rem;
+    }
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      gap: 1rem;
+    }
+    .section-header h2 { font-size: 1.15rem; }
+    .row-list { display: flex; flex-direction: column; gap: 0.85rem; }
+    .row-item {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.55rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .badge-active { background: rgba(56, 189, 248, 0.2); color: #7dd3fc; }
+    .badge-escrow { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
+    .badge-shipped { background: rgba(129, 140, 248, 0.25); color: #c7d2fe; }
+    .badge-done { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+    .badge-muted { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
+    .action-bar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .input-sm {
+      background: #0b0f19;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.45rem 0.65rem;
+      color: var(--text);
+      font-size: 0.85rem;
+      width: 190px;
+    }
+    .btn-sm {
+      border: none;
+      border-radius: 6px;
+      padding: 0.45rem 0.8rem;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-green { background: var(--accent); color: #064e3b; }
+    .btn-blue { background: var(--primary); color: #0b1120; }
+    .btn-red { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); }
+    .empty-msg { color: var(--muted); font-size: 0.92rem; padding: 0.75rem 0; }
+    .auth-gate {
+      text-align: center;
+      padding: 4rem 1.5rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="nav-container">
+      <a href="/" class="logo">ReWearIt Marketplace</a>
+      <div class="nav-links">
+        <a href="/" class="nav-link">Browse</a>
+        <a href="/seller" class="nav-link active">Dashboard</a>
+        <a href="/upload" class="btn-primary">+ Sell an Item</a>
+        <span id="rw-auth-slot"></span>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    <div id="signed-out-view" class="auth-gate" style="display: none;">
+      <h1 style="font-size: 1.75rem; margin-bottom: 0.5rem;">Sign in to manage your closet &amp; orders</h1>
+      <p style="color: var(--muted); margin-bottom: 1.5rem;">Track incoming sales, add shipping tracking, release escrow, and manage your active listings.</p>
+      <button type="button" class="btn-primary" onclick="ReWearAuth.openModal('login')">Sign In</button>
+      <button type="button" class="btn-sm btn-green" style="margin-left: 0.5rem; padding: 0.55rem 1rem;" onclick="ReWearAuth.openModal('register')">Create Account</button>
+    </div>
+
+    <div id="dashboard-view" style="display: none;">
+      <div style="margin-bottom: 1.5rem;">
+        <h1 style="font-size: 1.9rem;">Seller &amp; Orders Dashboard</h1>
+        <p id="welcome-line" style="color: var(--muted); font-size: 0.95rem;"></p>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Active Listings</div>
+          <div class="stat-value" id="stat-active">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Awaiting Shipment</div>
+          <div class="stat-value" style="color: var(--warn);" id="stat-to-ship">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Held in Escrow</div>
+          <div class="stat-value" style="color: var(--primary);" id="stat-escrow">$0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Completed Payouts</div>
+          <div class="stat-value" style="color: var(--accent);" id="stat-payouts">$0</div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <h2>Incoming Sales (Ship &amp; Payouts)</h2>
+          <button type="button" class="btn-sm btn-blue" onclick="refreshDashboard()">Refresh</button>
+        </div>
+        <div id="seller-orders-list" class="row-list"></div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <h2>My Purchases (Confirm Delivery &amp; Release Escrow)</h2>
+        </div>
+        <div id="buyer-orders-list" class="row-list"></div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <h2>My Listings</h2>
+          <a href="/upload" class="btn-primary">+ New Listing</a>
+        </div>
+        <div id="my-listings-list" class="row-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/auth.js"></script>
+  <script>
+    function esc(str) {
+      return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function statusBadge(status) {
+      const map = {
+        ACTIVE: "badge-active",
+        ANALYZING: "badge-escrow",
+        ESCROW_HELD: "badge-escrow",
+        RESERVED: "badge-escrow",
+        SHIPPED: "badge-shipped",
+        COMPLETED: "badge-done",
+        SOLD: "badge-done",
+      };
+      return `<span class="badge ${map[status] || "badge-muted"}">${esc(status)}</span>`;
+    }
+
+    async function refreshDashboard() {
+      const user = ReWearAuth.getUser();
+      if (!user || !ReWearAuth.getToken()) {
+        document.getElementById("signed-out-view").style.display = "block";
+        document.getElementById("dashboard-view").style.display = "none";
+        return;
+      }
+
+      document.getElementById("signed-out-view").style.display = "none";
+      document.getElementById("dashboard-view").style.display = "block";
+      document.getElementById("welcome-line").textContent = `Signed in as ${user.display_name} (${user.email})`;
+
+      const [listingsRes, sellerOrdersRes, buyerOrdersRes] = await Promise.all([
+        fetch(`/api/v1/items?seller_id=${encodeURIComponent(user.id)}&limit=100`),
+        fetch("/api/v1/orders?role=seller", { headers: ReWearAuth.authHeaders() }),
+        fetch("/api/v1/orders?role=buyer", { headers: ReWearAuth.authHeaders() }),
+      ]);
+
+      const listings = listingsRes.ok ? await listingsRes.json() : [];
+      const sellerOrders = sellerOrdersRes.ok ? await sellerOrdersRes.json() : [];
+      const buyerOrders = buyerOrdersRes.ok ? await buyerOrdersRes.json() : [];
+
+      const activeCount = listings.filter(i => i.status === "ACTIVE").length;
+      const toShip = sellerOrders.filter(o => o.status === "ESCROW_HELD");
+      const escrowSum = sellerOrders
+        .filter(o => o.status === "ESCROW_HELD" || o.status === "SHIPPED")
+        .reduce((acc, o) => acc + (Number(o.total_amount_units) || 0), 0);
+      const payoutsSum = sellerOrders
+        .filter(o => o.status === "COMPLETED")
+        .reduce((acc, o) => acc + (Number(o.total_amount_units) || 0), 0);
+
+      document.getElementById("stat-active").textContent = activeCount;
+      document.getElementById("stat-to-ship").textContent = toShip.length;
+      document.getElementById("stat-escrow").textContent = "$" + escrowSum;
+      document.getElementById("stat-payouts").textContent = "$" + payoutsSum;
+
+      renderSellerOrders(sellerOrders);
+      renderBuyerOrders(buyerOrders);
+      renderListings(listings);
+    }
+
+    function renderSellerOrders(orders) {
+      const el = document.getElementById("seller-orders-list");
+      if (!orders.length) {
+        el.innerHTML = `<p class="empty-msg">No incoming sales yet.</p>`;
+        return;
+      }
+      el.innerHTML = orders.map(o => `
+        <div class="row-item">
+          <div>
+            <div><strong>Order ${esc(o.id.slice(0, 8))}</strong> ${statusBadge(o.status)}</div>
+            <div style="font-size:0.85rem;color:var(--muted);margin-top:0.2rem;">
+              Item: <code>${esc(o.item_id.slice(0, 8))}</code> • Amount: <strong>$${Number(o.total_amount_units)} ${esc(o.currency)}</strong>
+              ${o.tracking_number ? ` • Tracking: <code>${esc(o.tracking_number)}</code>` : ""}
+            </div>
+          </div>
+          <div class="action-bar">
+            ${o.status === "ESCROW_HELD" ? `
+              <input class="input-sm" id="track-${esc(o.id)}" placeholder="Tracking # (e.g. 1Z999...)">
+              <button class="btn-sm btn-blue" onclick="shipOrder('${esc(o.id)}')">Mark Shipped</button>
+              <button class="btn-sm btn-red" onclick="cancelOrder('${esc(o.id)}')">Cancel</button>
+            ` : ""}
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderBuyerOrders(orders) {
+      const el = document.getElementById("buyer-orders-list");
+      if (!orders.length) {
+        el.innerHTML = `<p class="empty-msg">You haven't purchased any garments yet.</p>`;
+        return;
+      }
+      el.innerHTML = orders.map(o => `
+        <div class="row-item">
+          <div>
+            <div><strong>Order ${esc(o.id.slice(0, 8))}</strong> ${statusBadge(o.status)}</div>
+            <div style="font-size:0.85rem;color:var(--muted);margin-top:0.2rem;">
+              Item: <code>${esc(o.item_id.slice(0, 8))}</code> • Paid: <strong>$${Number(o.total_amount_units)} ${esc(o.currency)}</strong>
+              ${o.tracking_number ? ` • Tracking: <code>${esc(o.tracking_number)}</code>` : ""}
+            </div>
+          </div>
+          <div class="action-bar">
+            ${(o.status === "ESCROW_HELD" || o.status === "SHIPPED") ? `
+              <button class="btn-sm btn-green" onclick="completeOrder('${esc(o.id)}')">Confirm Delivery &amp; Release Escrow</button>
+              <button class="btn-sm btn-red" onclick="cancelOrder('${esc(o.id)}')">Cancel</button>
+            ` : ""}
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderListings(items) {
+      const el = document.getElementById("my-listings-list");
+      if (!items.length) {
+        el.innerHTML = `<p class="empty-msg">No listings yet. Upload a garment in Seller Studio to get started.</p>`;
+        return;
+      }
+      el.innerHTML = items.map(item => `
+        <div class="row-item">
+          <div>
+            <div><strong>${esc(item.title)}</strong> ${statusBadge(item.status)}</div>
+            <div style="font-size:0.85rem;color:var(--muted);margin-top:0.2rem;">
+              ${esc(item.brand)} • ${esc(item.category)} • Size ${esc(item.size)} • <strong>$${Number(item.price_units)}</strong>
+            </div>
+          </div>
+          <div class="action-bar">
+            ${(item.status === "ACTIVE" || item.status === "ANALYZING") ? `
+              <button class="btn-sm btn-red" onclick="delistItem('${esc(item.id)}')">Delist</button>
+            ` : ""}
+          </div>
+        </div>
+      `).join("");
+    }
+
+    async function shipOrder(orderId) {
+      const input = document.getElementById("track-" + orderId);
+      const tracking = input ? input.value.trim() : "";
+      if (tracking.length < 3) {
+        alert("Enter a tracking number (at least 3 characters).");
+        return;
+      }
+      const res = await fetch(`/api/v1/orders/${encodeURIComponent(orderId)}/ship`, {
+        method: "POST",
+        headers: ReWearAuth.authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ tracking_number: tracking }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert("Could not mark shipped: " + (d.detail || res.statusText));
+        return;
+      }
+      refreshDashboard();
+    }
+
+    async function completeOrder(orderId) {
+      const res = await fetch(`/api/v1/orders/${encodeURIComponent(orderId)}/complete`, {
+        method: "POST",
+        headers: ReWearAuth.authHeaders(),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert("Could not complete order: " + (d.detail || res.statusText));
+        return;
+      }
+      refreshDashboard();
+    }
+
+    async function cancelOrder(orderId) {
+      const res = await fetch(`/api/v1/orders/${encodeURIComponent(orderId)}/cancel`, {
+        method: "POST",
+        headers: ReWearAuth.authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ reason: "Cancelled from dashboard" }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert("Could not cancel order: " + (d.detail || res.statusText));
+        return;
+      }
+      refreshDashboard();
+    }
+
+    async function delistItem(itemId) {
+      const res = await fetch(`/api/v1/items/${encodeURIComponent(itemId)}`, {
+        method: "DELETE",
+        headers: ReWearAuth.authHeaders(),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert("Could not delist item: " + (d.detail || res.statusText));
+        return;
+      }
+      refreshDashboard();
+    }
+
+    ReWearAuth.init(() => refreshDashboard());
+  </script>
+</body>
+</html>

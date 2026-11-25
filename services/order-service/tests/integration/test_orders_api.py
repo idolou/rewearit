@@ -1,4 +1,9 @@
 """Integration tests for Order Service FastAPI endpoints."""
+import base64
+import hashlib
+import hmac
+import json
+import time
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,6 +12,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.v1.orders import get_order_service
 from app.clients.catalog_client import CatalogGrpcClient, CatalogItemSnapshot, ReservationResult
+from app.core.config import settings
 from app.core.database import get_session
 from app.events.producer import OrderEventProducer
 from app.main import app
@@ -15,6 +21,21 @@ from app.models.order import (
 )
 from app.services.idempotency import IdempotencyManager
 from app.services.order_service import OrderService
+
+
+def _make_jwt(user_id: str | uuid.UUID) -> str:
+    def _b64(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    h = _b64(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    p = _b64(
+        json.dumps(
+            {"sub": str(user_id), "email": "u@example.com", "name": "Test", "exp": int(time.time()) + 300},
+            separators=(",", ":"),
+        ).encode()
+    )
+    sig = _b64(hmac.new(settings.JWT_SECRET.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest())
+    return f"{h}.{p}.{sig}"
 
 
 @pytest.fixture
@@ -117,7 +138,10 @@ async def test_create_order_api_success(
         resp = await client.post(
             "/api/v1/orders",
             json=payload,
-            headers={"Idempotency-Key": "test-idemp-api-1"},
+            headers={
+                "Idempotency-Key": "test-idemp-api-1",
+                "Authorization": f"Bearer {_make_jwt(buyer_id)}",
+            },
         )
 
         assert resp.status_code == 201
@@ -125,6 +149,14 @@ async def test_create_order_api_success(
         assert data["buyer_id"] == buyer_id
         assert data["status"] == "ESCROW_HELD"
         assert data["total_amount_units"] == 180
+
+        # Unauthenticated request must be rejected with 401
+        unauth = await client.post(
+            "/api/v1/orders",
+            json=payload,
+            headers={"Idempotency-Key": "test-idemp-unauth"},
+        )
+        assert unauth.status_code == 401
 
     app.dependency_overrides.clear()
 
@@ -152,8 +184,9 @@ async def test_create_order_rejected_by_reservation(
     app.dependency_overrides[get_session] = lambda: session
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        buyer_id = str(uuid.uuid4())
         payload = {
-            "buyer_id": str(uuid.uuid4()),
+            "buyer_id": buyer_id,
             "seller_id": str(uuid.uuid4()),
             "item_id": str(uuid.uuid4()),
             "total_amount_units": 120,
@@ -161,7 +194,10 @@ async def test_create_order_rejected_by_reservation(
         resp = await client.post(
             "/api/v1/orders",
             json=payload,
-            headers={"Idempotency-Key": "test-idemp-reject"},
+            headers={
+                "Idempotency-Key": "test-idemp-reject",
+                "Authorization": f"Bearer {_make_jwt(buyer_id)}",
+            },
         )
         assert resp.status_code == 409
         assert "Item already sold" in resp.json()["detail"]

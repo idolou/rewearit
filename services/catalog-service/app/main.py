@@ -5,7 +5,7 @@ from pathlib import Path
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, Header, HTTPException, Request, Response, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import text
@@ -85,23 +85,38 @@ app.add_middleware(
 app.include_router(api_v1_router)
 
 
-@app.post("/api/v1/orders", include_in_schema=False)
-async def proxy_create_order(
-    request: Request,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-) -> Response:
-    """Proxy buyer checkout from the web UI to order-service so the browser never hardcodes hosts."""
-    body = await request.body()
-    headers = {"Content-Type": "application/json"}
-    if idempotency_key:
-        headers["Idempotency-Key"] = idempotency_key
-    target_url = f"{settings.ORDER_SERVICE_URL.rstrip('/')}/api/v1/orders"
+async def _proxy_orders(request: Request, subpath: str = "") -> Response:
+    """Forward authenticated order requests from browser UIs to order-service."""
+    headers: dict[str, str] = {}
+    if auth := request.headers.get("authorization"):
+        headers["Authorization"] = auth
+    if idemp := request.headers.get("idempotency-key"):
+        headers["Idempotency-Key"] = idemp
+    if ctype := request.headers.get("content-type"):
+        headers["Content-Type"] = ctype
+
+    query = f"?{request.url.query}" if request.url.query else ""
+    target_url = f"{settings.ORDER_SERVICE_URL.rstrip('/')}/api/v1/orders{subpath}{query}"
+    body = await request.body() if request.method == "POST" else None
+
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
-            resp = await client.post(target_url, content=body, headers=headers)
+            resp = await client.request(request.method, target_url, content=body, headers=headers)
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Could not reach order service: {e}") from e
     return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@app.api_route("/api/v1/orders", methods=["GET", "POST"], include_in_schema=False)
+async def proxy_orders_root(request: Request) -> Response:
+    return await _proxy_orders(request)
+
+
+@app.post("/api/v1/orders/{order_id}/{action}", include_in_schema=False)
+async def proxy_order_action(order_id: str, action: str, request: Request) -> Response:
+    if action not in ("ship", "complete", "cancel"):
+        raise HTTPException(status_code=404, detail="Unknown order action")
+    return await _proxy_orders(request, subpath=f"/{order_id}/{action}")
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -118,6 +133,18 @@ async def buyer_catalog_page() -> FileResponse:
 async def upload_page() -> FileResponse:
     """Interactive seller studio upload and preview page."""
     return FileResponse(STATIC_DIR / "upload_preview.html", media_type="text/html")
+
+
+@app.get("/seller", include_in_schema=False)
+async def seller_dashboard_page() -> FileResponse:
+    """Seller dashboard for managing listings, incoming orders, shipping, and payouts."""
+    return FileResponse(STATIC_DIR / "seller_dashboard.html", media_type="text/html")
+
+
+@app.get("/static/auth.js", include_in_schema=False)
+async def auth_script() -> FileResponse:
+    """Shared client-side auth modal and token helper for marketplace pages."""
+    return FileResponse(STATIC_DIR / "auth.js", media_type="application/javascript")
 
 
 @app.get("/healthz", status_code=status.HTTP_200_OK, tags=["Health"])

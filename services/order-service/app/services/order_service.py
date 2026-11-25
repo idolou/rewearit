@@ -3,6 +3,7 @@ import uuid
 from datetime import UTC, datetime
 
 from opentelemetry import trace
+from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, desc, select
 
@@ -29,6 +30,14 @@ class ItemReservationError(OrderServiceError):
 
 class PriceMismatchError(OrderServiceError):
     """Raised when client-submitted checkout amount does not match catalog price."""
+
+
+class SelfPurchaseError(OrderServiceError):
+    """Raised when a seller attempts to purchase their own listing."""
+
+
+class OrderForbiddenError(OrderServiceError):
+    """Raised when the authenticated user is not permitted to access or modify an order."""
 
 
 class OrderNotFoundError(OrderServiceError):
@@ -59,11 +68,16 @@ class OrderService:
         session: AsyncSession,
         req: OrderCreateRequest,
         idempotency_key: str,
+        buyer_id: uuid.UUID | None = None,
     ) -> Order:
         """Create order with atomic gRPC garment reservation and Redis idempotency."""
+        effective_buyer_id = buyer_id or req.buyer_id
+        if effective_buyer_id is None:
+            raise OrderServiceError("Authenticated buyer_id is required")
+
         with tracer.start_as_current_span("order_service.create_order") as span:
             span.set_attribute("item.id", str(req.item_id))
-            span.set_attribute("buyer.id", str(req.buyer_id))
+            span.set_attribute("buyer.id", str(effective_buyer_id))
             span.set_attribute("idempotency_key", idempotency_key)
 
             # 1. Acquire atomic in-flight idempotency lock
@@ -74,6 +88,8 @@ class OrderService:
                 )
                 existing = result.scalar_one_or_none()
                 if existing:
+                    if existing.buyer_id != effective_buyer_id:
+                        raise OrderForbiddenError("Idempotency key belongs to another user")
                     return existing
                 raise DuplicateProcessingError("Order checkout is currently in progress for this idempotency key")
 
@@ -84,6 +100,8 @@ class OrderService:
                 )
                 existing = result.scalar_one_or_none()
                 if existing:
+                    if existing.buyer_id != effective_buyer_id:
+                        raise OrderForbiddenError("Idempotency key belongs to another user")
                     return existing
 
                 order_id = uuid.uuid4()
@@ -92,7 +110,7 @@ class OrderService:
                 reservation = await self.catalog_client.reserve_item(
                     item_id=req.item_id,
                     order_id=order_id,
-                    buyer_id=req.buyer_id,
+                    buyer_id=effective_buyer_id,
                 )
 
                 if not reservation.success:
@@ -109,6 +127,10 @@ class OrderService:
                     await self.catalog_client.release_item(req.item_id, order_id, reason="catalog_lookup_failed")
                     raise ItemReservationError("Could not verify item price from catalog")
 
+                if catalog_item.seller_id == effective_buyer_id:
+                    await self.catalog_client.release_item(req.item_id, order_id, reason="self_purchase_blocked")
+                    raise SelfPurchaseError("You cannot purchase your own listing")
+
                 if (
                     req.total_amount_units != catalog_item.price_units
                     or req.total_amount_nanos != catalog_item.price_nanos
@@ -124,7 +146,7 @@ class OrderService:
                 now = datetime.now(UTC)
                 order = Order(
                     id=order_id,
-                    buyer_id=req.buyer_id,
+                    buyer_id=effective_buyer_id,
                     seller_id=catalog_item.seller_id,
                     item_id=req.item_id,
                     status=OrderStatus.ESCROW_HELD,
@@ -164,8 +186,9 @@ class OrderService:
         session: AsyncSession,
         order_id: uuid.UUID,
         for_update: bool = False,
+        actor_id: uuid.UUID | None = None,
     ) -> Order:
-        """Fetch order by ID, optionally locking the row for state transitions."""
+        """Fetch order by ID, optionally locking the row and checking participant ownership."""
         query = select(Order).where(Order.id == order_id)
         if for_update:
             query = query.with_for_update()
@@ -173,6 +196,8 @@ class OrderService:
         order = result.scalar_one_or_none()
         if not order:
             raise OrderNotFoundError(f"Order {order_id} not found")
+        if actor_id is not None and actor_id not in (order.buyer_id, order.seller_id):
+            raise OrderForbiddenError("You do not have access to this order")
         return order
 
     async def list_orders(
@@ -180,12 +205,15 @@ class OrderService:
         session: AsyncSession,
         buyer_id: uuid.UUID | None = None,
         seller_id: uuid.UUID | None = None,
+        participant_id: uuid.UUID | None = None,
         status: OrderStatus | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Order]:
         """Query orders with optional filters."""
         query = select(Order)
+        if participant_id is not None:
+            query = query.where(or_(col(Order.buyer_id) == participant_id, col(Order.seller_id) == participant_id))
         if buyer_id:
             query = query.where(Order.buyer_id == buyer_id)
         if seller_id:
@@ -202,9 +230,12 @@ class OrderService:
         session: AsyncSession,
         order_id: uuid.UUID,
         tracking_number: str,
+        seller_id: uuid.UUID | None = None,
     ) -> Order:
-        """Mark order as SHIPPED with tracking number."""
+        """Mark order as SHIPPED with tracking number (seller only)."""
         order = await self.get_order(session, order_id, for_update=True)
+        if seller_id is not None and order.seller_id != seller_id:
+            raise OrderForbiddenError("Only the seller can mark this order as shipped")
         if order.status != OrderStatus.ESCROW_HELD:
             raise InvalidStateTransitionError(
                 f"Cannot ship order in status {order.status}; must be in {OrderStatus.ESCROW_HELD}"
@@ -220,9 +251,16 @@ class OrderService:
         logger.info(f"Order {order_id} marked as SHIPPED with tracking={tracking_number}")
         return order
 
-    async def complete_order(self, session: AsyncSession, order_id: uuid.UUID) -> Order:
-        """Complete order, mark garment SOLD via gRPC, and release escrow funds to seller."""
+    async def complete_order(
+        self,
+        session: AsyncSession,
+        order_id: uuid.UUID,
+        buyer_id: uuid.UUID | None = None,
+    ) -> Order:
+        """Complete order, mark garment SOLD via gRPC, and release escrow funds (buyer only)."""
         order = await self.get_order(session, order_id, for_update=True)
+        if buyer_id is not None and order.buyer_id != buyer_id:
+            raise OrderForbiddenError("Only the buyer can confirm delivery and release escrow")
         valid_preceding = (OrderStatus.ESCROW_HELD, OrderStatus.SHIPPED, OrderStatus.DELIVERED)
         if order.status not in valid_preceding:
             raise InvalidStateTransitionError(
@@ -255,9 +293,10 @@ class OrderService:
         session: AsyncSession,
         order_id: uuid.UUID,
         reason: str,
+        actor_id: uuid.UUID | None = None,
     ) -> Order:
-        """Cancel order, refund buyer, and release garment reservation via gRPC."""
-        order = await self.get_order(session, order_id, for_update=True)
+        """Cancel order, refund buyer, and release garment reservation (buyer or seller only)."""
+        order = await self.get_order(session, order_id, for_update=True, actor_id=actor_id)
         if order.status in (OrderStatus.COMPLETED, OrderStatus.CANCELLED, OrderStatus.REFUNDED):
             raise InvalidStateTransitionError(
                 f"Cannot cancel order in final status {order.status}"

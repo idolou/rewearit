@@ -145,7 +145,7 @@ rewearit/
 
 | Service | Protocol / Port | Purpose |
 | :--- | :--- | :--- |
-| **`catalog-service`** | REST `:8001`, gRPC `:50051` | Garment catalog, pgvector vector search, Buyer Marketplace (`/`), Seller Studio (`/upload`) |
+| **`catalog-service`** | REST `:8001`, gRPC `:50051` | Garment catalog, JWT auth (`/api/v1/auth/*`), pgvector search, Marketplace (`/`), Studio (`/upload`), Seller Dashboard (`/seller`) |
 | **`ai-worker`** | REST `:8002` | Studio background removal, VLM classification, CLIP embeddings |
 | **`order-service`** | REST `:8003` | Order transactions, Redis idempotency, escrow state machine |
 | **`Jaeger UI`** | HTTP `:16686` (OTLP `:4317`) | Distributed tracing across HTTP, gRPC, and Kafka |
@@ -187,6 +187,7 @@ Buyers can explore curated second-hand listings or find exact and visually simil
      -F "limit=10"
    ```
 3. **Escrow Checkout**: Reserve garments directly in the UI with instant 1-of-1 lock verification and double-buy protection.
+4. **JWT Auth & Seller Dashboard**: Sign up or sign in at [`http://localhost:8001/seller`](http://localhost:8001/seller) (`/api/v1/auth/register`, `/api/v1/auth/login`) to manage listings, add shipping tracking numbers, track escrow payouts, and confirm deliveries.
 
 ---
 

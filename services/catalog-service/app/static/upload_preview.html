@@ -276,6 +276,13 @@
 </head>
 <body>
   <div class="container">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:0.75rem;">
+      <div style="display:flex;gap:1rem;align-items:center;">
+        <a href="/" style="color:var(--primary);text-decoration:none;font-weight:700;">&larr; Marketplace</a>
+        <a href="/seller" style="color:var(--text-muted);text-decoration:none;font-weight:600;">Dashboard</a>
+      </div>
+      <span id="rw-auth-slot"></span>
+    </div>
     <header>
       <h1>ReWearIt Seller Studio</h1>
       <p>Instant background removal & studio catalog framing with multimodal attribute pre-fill</p>
@@ -434,7 +441,9 @@
     </div>
   </div>
 
+  <script src="/static/auth.js"></script>
   <script>
+    ReWearAuth.init();
     let currentCleanImageUrl = "";
     let currentOriginalImageUrl = "";
     let priceGuidance = { min_price: 30, target_price: 50, max_price: 65 };
@@ -474,6 +483,10 @@
     }
 
     async function handleFile(file) {
+      if (!ReWearAuth.getToken()) {
+        ReWearAuth.openModal("login", () => handleFile(file));
+        return;
+      }
       dropzone.style.display = "none";
       spinnerWrap.style.display = "block";
       reviewSection.style.display = "none";
@@ -485,9 +498,15 @@
       try {
         const res = await fetch("/api/v1/items/classify", {
           method: "POST",
+          headers: ReWearAuth.authHeaders(),
           body: formData,
         });
 
+        if (res.status === 401) {
+          ReWearAuth.openModal("login", () => handleFile(file));
+          dropzone.style.display = "block";
+          return;
+        }
         if (!res.ok) throw new Error("Classification failed: " + res.statusText);
         const data = await res.json();
         populateResults(data);
@@ -567,7 +586,6 @@
       const parsedPrice = parseInt(document.getElementById("item-price").value, 10);
       const chosenPrice = isNaN(parsedPrice) || parsedPrice <= 0 ? (priceGuidance.target_price || 30) : parsedPrice;
       const payload = {
-        seller_id: "00000000-0000-0000-0000-000000000001",
         title: document.getElementById("item-title").value,
         category: document.getElementById("item-category").value,
         brand: document.getElementById("item-brand").value,
@@ -585,7 +603,7 @@
       try {
         const res = await fetch("/api/v1/items", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: ReWearAuth.authHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify(payload),
         });
 

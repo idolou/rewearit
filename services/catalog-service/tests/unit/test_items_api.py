@@ -5,8 +5,15 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.core.auth import create_access_token
 from app.main import app
 from app.models.item import ConditionGrade, Item, ItemCategory, ItemStatus
+
+
+def _auth_headers(user_id: uuid.UUID | None = None) -> dict[str, str]:
+    uid = user_id or uuid.uuid4()
+    token = create_access_token(uid, "seller@example.com", "Test Seller")
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.mark.asyncio
@@ -56,7 +63,11 @@ async def test_create_item_endpoint() -> None:
     with patch("app.services.catalog_service.CatalogService.create_item", new=AsyncMock(return_value=mock_created_item)):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post("/api/v1/items", json=item_payload)
+            response = await client.post(
+                "/api/v1/items",
+                json=item_payload,
+                headers=_auth_headers(uuid.UUID(seller_id)),
+            )
             assert response.status_code == 201
             data = response.json()
             assert data["title"] == "Cashmere Knit Sweater"
@@ -109,7 +120,7 @@ async def test_classify_item_proxy_endpoint() -> None:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             files = {"file": ("test.jpg", b"fake_jpeg_content", "image/jpeg")}
-            response = await client.post("/api/v1/items/classify", files=files)
+            response = await client.post("/api/v1/items/classify", files=files, headers=_auth_headers())
             assert response.status_code == 200
             data = response.json()
             assert data["clean_image_url"] == mock_ai_response["clean_image_url"]
