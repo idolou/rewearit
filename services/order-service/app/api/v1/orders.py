@@ -21,6 +21,7 @@ from app.services.order_service import (
     ItemReservationError,
     OrderNotFoundError,
     OrderService,
+    PriceMismatchError,
 )
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
@@ -70,6 +71,11 @@ async def create_order(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Item reservation rejected: {e}",
+        ) from e
+    except PriceMismatchError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
         ) from e
     except DuplicateProcessingError as e:
         raise HTTPException(

@@ -7,7 +7,6 @@ volumes:
   minio-data:
   postgres-catalog-data:
   postgres-orders-data:
-  postgres-pricing-data:
 
 services:
   # -------------------------------------------------------------
@@ -132,25 +131,6 @@ services:
       timeout: 3s
       retries: 5
 
-  postgres-pricing:
-    image: postgres:16-alpine
-    container_name: rewearit-postgres-pricing
-    networks:
-      - rewearit-mesh
-    ports:
-      - "5434:5432"
-    environment:
-      POSTGRES_DB: pricing_db
-      POSTGRES_USER: pricing_user
-      POSTGRES_PASSWORD: pricing_password
-    volumes:
-      - postgres-pricing-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pricing_user -d pricing_db"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
   # -------------------------------------------------------------
   # Distributed Observability & Tracing (Jaeger / OpenTelemetry)
   # -------------------------------------------------------------
@@ -192,6 +172,7 @@ services:
       PORT: 8001
       GRPC_PORT: 50051
       AI_WORKER_URL: http://ai-worker:8002
+      ORDER_SERVICE_URL: http://order-service:8003
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
       OTEL_EXPORTER_OTLP_INSECURE: "true"
       OTEL_SERVICE_NAME: rewearit-catalog-service

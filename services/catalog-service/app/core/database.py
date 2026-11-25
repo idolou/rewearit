@@ -8,12 +8,18 @@ from sqlmodel import SQLModel
 
 from app.core.config import settings
 
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=settings.DB_ECHO,
-    poolclass=NullPool,
-    future=True,
-)
+_engine_kwargs: dict[str, object] = {
+    "echo": settings.DB_ECHO,
+    "future": True,
+}
+if settings.ENVIRONMENT == "test":
+    _engine_kwargs["poolclass"] = NullPool
+else:
+    _engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
+    _engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
+    _engine_kwargs["pool_pre_ping"] = True
+
+engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
 
 async_session_maker = async_sessionmaker(
     engine,

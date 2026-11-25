@@ -73,3 +73,16 @@ async def test_classify_json_base64_upload() -> None:
     assert auto_fill["brand"] == "Nike"
     assert auto_fill["category"] == "Tops"
     assert auto_fill["condition_grade"] == "NEW_WITH_TAGS"
+
+
+@pytest.mark.asyncio
+async def test_classify_blocks_ssrf_private_urls() -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        for bad_url in (
+            "http://127.0.0.1:8002/healthz",
+            "http://10.0.0.1/internal",
+            "file:///etc/passwd",
+        ):
+            response = await client.post("/api/v1/classify", json={"image_url": bad_url})
+            assert response.status_code == 400, f"Expected 400 for {bad_url}, got {response.status_code}"

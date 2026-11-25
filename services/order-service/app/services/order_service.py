@@ -12,7 +12,6 @@ from app.events.producer import OrderEventProducer
 from app.models.order import (
     Order,
     OrderCreateRequest,
-    OrderResponse,
     OrderStatus,
 )
 from app.services.idempotency import IdempotencyManager
@@ -26,6 +25,10 @@ class OrderServiceError(Exception):
 
 class ItemReservationError(OrderServiceError):
     """Raised when garment cannot be reserved via catalog gRPC."""
+
+
+class PriceMismatchError(OrderServiceError):
+    """Raised when client-submitted checkout amount does not match catalog price."""
 
 
 class OrderNotFoundError(OrderServiceError):
@@ -63,96 +66,110 @@ class OrderService:
             span.set_attribute("buyer.id", str(req.buyer_id))
             span.set_attribute("idempotency_key", idempotency_key)
 
-            # 1. Acquire atomic idempotency lock
+            # 1. Acquire atomic in-flight idempotency lock
             acquired = await self.idempotency_mgr.acquire_lock(idempotency_key)
             if not acquired:
-                # Check if already processed and stored
-                cached = await self.idempotency_mgr.get_cached_response(idempotency_key)
-                if cached:
-                    logger.info(f"Returning cached order for idempotency_key={idempotency_key}")
-                    # Look up from database to return model
-                    result = await session.execute(
-                        select(Order).where(Order.idempotency_key == idempotency_key)
-                    )
-                    existing = result.scalar_one_or_none()
-                    if existing:
-                        return existing
-
+                result = await session.execute(
+                    select(Order).where(Order.idempotency_key == idempotency_key)
+                )
+                existing = result.scalar_one_or_none()
+                if existing:
+                    return existing
                 raise DuplicateProcessingError("Order checkout is currently in progress for this idempotency key")
 
-            # Check DB safeguard for existing order with this idempotency key
-            result = await session.execute(
-                select(Order).where(Order.idempotency_key == idempotency_key)
-            )
-            existing = result.scalar_one_or_none()
-            if existing:
-                await self.idempotency_mgr.release_lock(idempotency_key)
-                return existing
-
-            order_id = uuid.uuid4()
-
-            # 2. Atomically reserve item in catalog service via gRPC
-            reservation = await self.catalog_client.reserve_item(
-                item_id=req.item_id,
-                order_id=order_id,
-                buyer_id=req.buyer_id,
-            )
-
-            if not reservation.success:
-                logger.warning(
-                    f"Reservation rejected by catalog for item_id={req.item_id}: {reservation.error_message}"
-                )
-                await self.idempotency_mgr.release_lock(idempotency_key)
-                raise ItemReservationError(
-                    reservation.error_message or "Item is not available for purchase or already reserved"
-                )
-
-            # 3. Create Order record in ESCROW_HELD state
-            now = datetime.now(UTC)
-            order = Order(
-                id=order_id,
-                buyer_id=req.buyer_id,
-                seller_id=req.seller_id,
-                item_id=req.item_id,
-                status=OrderStatus.ESCROW_HELD,
-                total_amount_units=req.total_amount_units,
-                total_amount_nanos=req.total_amount_nanos,
-                currency=req.currency,
-                idempotency_key=idempotency_key,
-                created_at=now,
-                updated_at=now,
-                escrow_locked_at=now,
-            )
-
             try:
-                session.add(order)
-                await session.commit()
-                await session.refresh(order)
-            except Exception as e:
-                logger.error(f"Failed to persist order: {e}", exc_info=True)
-                # Compensating transaction: release item reservation in catalog
-                await self.catalog_client.release_item(req.item_id, order_id, reason="order_persistence_failed")
-                await self.idempotency_mgr.release_lock(idempotency_key)
-                raise
+                # Check DB safeguard for previously completed order with this idempotency key
+                result = await session.execute(
+                    select(Order).where(Order.idempotency_key == idempotency_key)
+                )
+                existing = result.scalar_one_or_none()
+                if existing:
+                    return existing
 
-            # 4. Publish Kafka events
-            if self.producer:
+                order_id = uuid.uuid4()
+
+                # 2. Atomically reserve item in catalog service via gRPC
+                reservation = await self.catalog_client.reserve_item(
+                    item_id=req.item_id,
+                    order_id=order_id,
+                    buyer_id=req.buyer_id,
+                )
+
+                if not reservation.success:
+                    logger.warning(
+                        f"Reservation rejected by catalog for item_id={req.item_id}: {reservation.error_message}"
+                    )
+                    raise ItemReservationError(
+                        reservation.error_message or "Item is not available for purchase or already reserved"
+                    )
+
+                # 3. Fetch authoritative price & seller while holding the reservation
+                catalog_item = await self.catalog_client.get_item(req.item_id)
+                if catalog_item is None:
+                    await self.catalog_client.release_item(req.item_id, order_id, reason="catalog_lookup_failed")
+                    raise ItemReservationError("Could not verify item price from catalog")
+
+                if (
+                    req.total_amount_units != catalog_item.price_units
+                    or req.total_amount_nanos != catalog_item.price_nanos
+                    or req.currency != catalog_item.currency
+                ):
+                    await self.catalog_client.release_item(req.item_id, order_id, reason="price_mismatch")
+                    raise PriceMismatchError(
+                        f"Checkout amount ({req.total_amount_units} {req.currency}) does not match "
+                        f"catalog price ({catalog_item.price_units} {catalog_item.currency})"
+                    )
+
+                # 4. Create Order record in ESCROW_HELD state using authoritative catalog seller & price
+                now = datetime.now(UTC)
+                order = Order(
+                    id=order_id,
+                    buyer_id=req.buyer_id,
+                    seller_id=catalog_item.seller_id,
+                    item_id=req.item_id,
+                    status=OrderStatus.ESCROW_HELD,
+                    total_amount_units=catalog_item.price_units,
+                    total_amount_nanos=catalog_item.price_nanos,
+                    currency=catalog_item.currency,
+                    idempotency_key=idempotency_key,
+                    created_at=now,
+                    updated_at=now,
+                    escrow_locked_at=now,
+                )
+
                 try:
-                    await self.producer.publish_order_placed(order)
-                    await self.producer.publish_order_escrow_locked(order)
+                    session.add(order)
+                    await session.commit()
+                    await session.refresh(order)
                 except Exception as e:
-                    logger.error(f"Failed to publish Kafka order events: {e}", exc_info=True)
+                    logger.error(f"Failed to persist order: {e}", exc_info=True)
+                    await self.catalog_client.release_item(req.item_id, order_id, reason="order_persistence_failed")
+                    raise
 
-            # 5. Store completed response in Redis idempotency cache
-            order_dict = OrderResponse.model_validate(order, from_attributes=True).model_dump(mode="json")
-            await self.idempotency_mgr.store_response(idempotency_key, order_dict)
+                # 5. Publish Kafka events
+                if self.producer:
+                    try:
+                        await self.producer.publish_order_placed(order)
+                        await self.producer.publish_order_escrow_locked(order)
+                    except Exception as e:
+                        logger.error(f"Failed to publish Kafka order events: {e}", exc_info=True)
 
-            logger.info(f"Order created successfully: order_id={order.id}, status={order.status}")
-            return order
+                logger.info(f"Order created successfully: order_id={order.id}, status={order.status}")
+                return order
+            finally:
+                await self.idempotency_mgr.release_lock(idempotency_key)
 
-    async def get_order(self, session: AsyncSession, order_id: uuid.UUID) -> Order:
-        """Fetch order by ID."""
-        result = await session.execute(select(Order).where(Order.id == order_id))
+    async def get_order(
+        self,
+        session: AsyncSession,
+        order_id: uuid.UUID,
+        for_update: bool = False,
+    ) -> Order:
+        """Fetch order by ID, optionally locking the row for state transitions."""
+        query = select(Order).where(Order.id == order_id)
+        if for_update:
+            query = query.with_for_update()
+        result = await session.execute(query)
         order = result.scalar_one_or_none()
         if not order:
             raise OrderNotFoundError(f"Order {order_id} not found")
@@ -187,7 +204,7 @@ class OrderService:
         tracking_number: str,
     ) -> Order:
         """Mark order as SHIPPED with tracking number."""
-        order = await self.get_order(session, order_id)
+        order = await self.get_order(session, order_id, for_update=True)
         if order.status != OrderStatus.ESCROW_HELD:
             raise InvalidStateTransitionError(
                 f"Cannot ship order in status {order.status}; must be in {OrderStatus.ESCROW_HELD}"
@@ -204,8 +221,8 @@ class OrderService:
         return order
 
     async def complete_order(self, session: AsyncSession, order_id: uuid.UUID) -> Order:
-        """Complete order and release escrow funds to seller."""
-        order = await self.get_order(session, order_id)
+        """Complete order, mark garment SOLD via gRPC, and release escrow funds to seller."""
+        order = await self.get_order(session, order_id, for_update=True)
         valid_preceding = (OrderStatus.ESCROW_HELD, OrderStatus.SHIPPED, OrderStatus.DELIVERED)
         if order.status not in valid_preceding:
             raise InvalidStateTransitionError(
@@ -220,6 +237,9 @@ class OrderService:
         session.add(order)
         await session.commit()
         await session.refresh(order)
+
+        # Synchronously mark SOLD in catalog so a Kafka hiccup cannot let the reservation TTL expire
+        await self.catalog_client.mark_item_sold(order.item_id, order.id, order.buyer_id)
 
         if self.producer:
             try:
@@ -237,7 +257,7 @@ class OrderService:
         reason: str,
     ) -> Order:
         """Cancel order, refund buyer, and release garment reservation via gRPC."""
-        order = await self.get_order(session, order_id)
+        order = await self.get_order(session, order_id, for_update=True)
         if order.status in (OrderStatus.COMPLETED, OrderStatus.CANCELLED, OrderStatus.REFUNDED):
             raise InvalidStateTransitionError(
                 f"Cannot cancel order in final status {order.status}"

@@ -1,5 +1,8 @@
 """Test fixtures and connection guards for catalog service."""
+import os
 import socket
+
+os.environ.setdefault("ENVIRONMENT", "test")
 
 import pytest
 

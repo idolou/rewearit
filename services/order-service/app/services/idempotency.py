@@ -1,7 +1,4 @@
-"""Redis-backed atomic idempotency manager preventing duplicate order checkout processing."""
-import json
-from typing import Any
-
+"""Redis-backed atomic idempotency lock preventing duplicate in-flight order processing."""
 import redis.asyncio as aioredis
 from opentelemetry import trace
 
@@ -25,6 +22,10 @@ class IdempotencyManager:
             )
         return self._redis
 
+    async def ping(self) -> bool:
+        client = await self.get_client()
+        return bool(await client.ping())
+
     async def close(self) -> None:
         if self._redis:
             await self._redis.close()
@@ -39,40 +40,10 @@ class IdempotencyManager:
             return bool(acquired)
 
     async def release_lock(self, idempotency_key: str) -> None:
-        """Release processing lock if order processing fails before completion."""
+        """Release processing lock after checkout completes or fails."""
         try:
             client = await self.get_client()
             lock_key = f"idemp:lock:{idempotency_key}"
             await client.delete(lock_key)
         except Exception as e:
             logger.warning(f"Failed to release idempotency lock for key={idempotency_key}: {e}")
-
-    async def store_response(
-        self,
-        idempotency_key: str,
-        response_data: dict[str, Any],
-        ttl_seconds: int | None = None,
-    ) -> None:
-        """Persist cached response payload for completed idempotency key."""
-        ttl = ttl_seconds or settings.IDEMPOTENCY_TTL_SECONDS
-        with tracer.start_as_current_span("idempotency.store_response"):
-            client = await self.get_client()
-            resp_key = f"idemp:resp:{idempotency_key}"
-            await client.set(resp_key, json.dumps(response_data, default=str), ex=ttl)
-            # Remove in-progress lock now that permanent response is cached
-            await self.release_lock(idempotency_key)
-
-    async def get_cached_response(self, idempotency_key: str) -> dict[str, Any] | None:
-        """Retrieve previously processed response for idempotent requests."""
-        with tracer.start_as_current_span("idempotency.get_cached"):
-            client = await self.get_client()
-            resp_key = f"idemp:resp:{idempotency_key}"
-            raw = await client.get(resp_key)
-            if raw:
-                try:
-                    parsed = json.loads(raw)
-                    if isinstance(parsed, dict):
-                        return parsed
-                except Exception as e:
-                    logger.error(f"Failed to deserialize cached response: {e}")
-            return None

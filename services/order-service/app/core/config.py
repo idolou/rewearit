@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # REST Server bindings
     REST_HOST: str = "0.0.0.0"
     REST_PORT: int = 8003
+    CORS_ORIGINS: list[str] = ["http://localhost:8001", "http://127.0.0.1:8001"]
 
     # Database (PostgreSQL 16 orders_db)
     DATABASE_URL: str = "postgresql+asyncpg://orders_user:orders_password@localhost:5433/orders_db"

@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     REST_PORT: int = 8001
     GRPC_HOST: str = "0.0.0.0"
     GRPC_PORT: int = 50051
+    CORS_ORIGINS: list[str] = ["http://localhost:8001", "http://127.0.0.1:8001"]
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://catalog_user:catalog_password@localhost:5432/catalog_db"
@@ -38,8 +39,9 @@ class Settings(BaseSettings):
     S3_ACCESS_KEY: str = "minioadmin"
     S3_SECRET_KEY: str = "minioadminpassword"
 
-    # AI Worker Service
+    # Downstream Microservices
     AI_WORKER_URL: str = "http://localhost:8002"
+    ORDER_SERVICE_URL: str = "http://localhost:8003"
 
 
 settings = Settings()

@@ -1,8 +1,8 @@
 """FastAPI probe and monitoring server for rewearit-ai-worker."""
+import asyncio
 import base64
 import uuid
 from typing import Any
-from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -15,11 +15,10 @@ from app.pipeline.classifier import (
     PriceRangeRecommendation,
 )
 from app.pipeline.embeddings.encoder import VisualEmbeddingEncoder
-from app.pipeline.preprocessor import ImagePreprocessor
+from app.pipeline.preprocessor import ImagePreprocessor, validate_external_image_url
 from app.storage.s3 import S3Storage
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024  # 15 MB
-BLOCKED_HOSTS = {"169.254.169.254", "metadata.google.internal"}
 
 app = FastAPI(
     title="ReWearIt AI Worker Probes and Classification Service",
@@ -108,11 +107,11 @@ async def classify_item(request: Request) -> ClassifyResponse:
                 raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {e}") from e
         elif body.get("image_url"):
             target_url = str(body["image_url"]).strip()
-            parsed = urlparse(target_url)
-            if parsed.hostname in BLOCKED_HOSTS:
-                raise HTTPException(status_code=400, detail="Access to specified host is forbidden")
             try:
+                await asyncio.to_thread(validate_external_image_url, target_url)
                 image_bytes = await _preprocessor.fetch_image(target_url)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Failed to fetch image from URL: {e}") from e
 
@@ -124,9 +123,11 @@ async def classify_item(request: Request) -> ClassifyResponse:
 
     session_id = uuid.uuid4().hex[:10]
 
-    # 1. Save original raw image
+    # 1. Save original raw image (offload sync boto3 call from event loop)
     orig_key = f"garments/raw/{session_id}.jpg"
-    original_url = _s3_storage.upload_bytes(image_bytes, filename=orig_key, content_type="image/jpeg")
+    original_url = await asyncio.to_thread(
+        _s3_storage.upload_bytes, image_bytes, filename=orig_key, content_type="image/jpeg"
+    )
 
     # 2. Run studio enhancement and classifier
     hints = {
@@ -138,7 +139,9 @@ async def classify_item(request: Request) -> ClassifyResponse:
 
     # 3. Save clean catalog image
     clean_key = f"garments/clean/{session_id}.jpg"
-    clean_url = _s3_storage.upload_bytes(result.clean_image_bytes, filename=clean_key, content_type="image/jpeg")
+    clean_url = await asyncio.to_thread(
+        _s3_storage.upload_bytes, result.clean_image_bytes, filename=clean_key, content_type="image/jpeg"
+    )
 
     return ClassifyResponse(
         clean_image_url=clean_url,
@@ -175,11 +178,11 @@ async def generate_embedding(request: Request) -> EmbeddingResponse:
                 raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {e}") from e
         elif body.get("image_url"):
             target_url = str(body["image_url"]).strip()
-            parsed = urlparse(target_url)
-            if parsed.hostname in BLOCKED_HOSTS:
-                raise HTTPException(status_code=400, detail="Access to specified host is forbidden")
             try:
+                await asyncio.to_thread(validate_external_image_url, target_url)
                 image_bytes = await _preprocessor.fetch_image(target_url)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Failed to fetch image from URL: {e}") from e
 
@@ -189,11 +192,13 @@ async def generate_embedding(request: Request) -> EmbeddingResponse:
     if len(image_bytes) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail=f"Uploaded image exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)}MB size limit")
 
-    try:
-        processed_bytes = _preprocessor.process_bytes(image_bytes).cleaned_bytes
-    except Exception:
-        processed_bytes = image_bytes
+    def _preprocess_and_encode(raw: bytes, ctx: str) -> list[float]:
+        try:
+            cleaned = _preprocessor.process_bytes(raw).cleaned_bytes
+        except Exception:
+            cleaned = raw
+        return _encoder.encode_image(cleaned, context_text=ctx)
 
-    embedding = _encoder.encode_image(processed_bytes, context_text=context_text)
+    embedding = await asyncio.to_thread(_preprocess_and_encode, image_bytes, context_text)
     return EmbeddingResponse(embedding=embedding, dimension=len(embedding))
 

@@ -3,10 +3,11 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import httpx
 import uvicorn
-from fastapi import FastAPI, status
+from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import text
 
 from app.api.v1 import api_v1_router
@@ -75,13 +76,33 @@ instrument_app(app)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(api_v1_router)
+
+
+@app.post("/api/v1/orders", include_in_schema=False)
+async def proxy_create_order(
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> Response:
+    """Proxy buyer checkout from the web UI to order-service so the browser never hardcodes hosts."""
+    body = await request.body()
+    headers = {"Content-Type": "application/json"}
+    if idempotency_key:
+        headers["Idempotency-Key"] = idempotency_key
+    target_url = f"{settings.ORDER_SERVICE_URL.rstrip('/')}/api/v1/orders"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            resp = await client.post(target_url, content=body, headers=headers)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Could not reach order service: {e}") from e
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -99,15 +120,14 @@ async def upload_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "upload_preview.html", media_type="text/html")
 
 
-
 @app.get("/healthz", status_code=status.HTTP_200_OK, tags=["Health"])
 async def healthz() -> dict[str, str]:
     """Liveness probe."""
     return {"status": "ok", "service": settings.SERVICE_NAME}
 
 
-@app.get("/ready", status_code=status.HTTP_200_OK, tags=["Health"])
-async def ready() -> dict[str, str]:
+@app.get("/ready", status_code=status.HTTP_200_OK, tags=["Health"], response_model=None)
+async def ready() -> dict[str, str] | JSONResponse:
     """Readiness probe checking database connectivity."""
     try:
         async with engine.connect() as conn:
@@ -115,7 +135,7 @@ async def ready() -> dict[str, str]:
         return {"status": "ready", "database": "connected"}
     except Exception as e:
         logger.error(f"Readiness check failed: {e}")
-        return {"status": "degraded", "database": str(e)}
+        return JSONResponse(status_code=503, content={"status": "degraded", "database": "unavailable"})
 
 
 if __name__ == "__main__":

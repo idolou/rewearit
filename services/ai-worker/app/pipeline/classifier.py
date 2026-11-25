@@ -1,4 +1,5 @@
 """Garment classification and studio image enhancement coordinator."""
+import asyncio
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -50,9 +51,8 @@ class GarmentClassifier:
         description = hints.get("description", "")
         declared_condition = hints.get("declared_condition")
 
-        # 1. Studio background removal and white catalog canvas framing
-        foreground_rgba = self.studio.remove_background(image_bytes)
-        clean_catalog_bytes = self.studio.composite_catalog_frame(foreground_rgba)
+        # 1. Studio background removal and white catalog canvas framing (offload CPU work)
+        clean_catalog_bytes = await asyncio.to_thread(self.studio.create_catalog_ready_image, image_bytes)
 
         # 2. VLM Multimodal analysis
         vlm_res = await self.vlm.analyze(

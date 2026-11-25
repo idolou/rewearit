@@ -1,13 +1,43 @@
 """Image preprocessor and EXIF metadata stripping."""
 import hashlib
 import io
+import ipaddress
+import socket
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import httpx
 from PIL import Image
 
 from app.core.config import settings
 from app.core.logging import logger
+
+
+def validate_external_image_url(url: str) -> str:
+    """Reject non-HTTP(S) schemes and private/loopback/link-local hosts to prevent SSRF."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("Image URL must use http or https with a valid hostname")
+
+    # Allow our own configured MinIO/S3 endpoints for internal garment assets
+    allowed_s3_bases = {
+        settings.S3_ENDPOINT.rstrip("/"),
+        settings.S3_PUBLIC_URL.rstrip("/"),
+    }
+    if any(base and url.startswith(f"{base}/") for base in allowed_s3_bases):
+        return url
+
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
+    except socket.gaierror as e:
+        raise ValueError(f"Could not resolve hostname '{parsed.hostname}'") from e
+
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if not ip.is_global:
+            raise ValueError(f"Access to non-public address ({ip}) is forbidden")
+
+    return url
 
 
 @dataclass

@@ -5,12 +5,14 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.api.v1.orders import router as orders_router
 from app.api.v1.orders import set_order_service
 from app.clients.catalog_client import CatalogGrpcClient
 from app.core.config import settings
-from app.core.database import init_db
+from app.core.database import engine, init_db
 from app.core.logging import logger, setup_logging
 from app.core.telemetry import init_tracer, instrument_app
 from app.events.producer import OrderEventProducer
@@ -55,7 +57,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     logger.info("Shutting down rewearit-order-service...")
     await producer.stop()
+    await catalog_client.close()
     await idempotency_mgr.close()
+    await engine.dispose()
     logger.info("Shutdown complete.")
 
 
@@ -68,7 +72,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -85,10 +89,17 @@ async def liveness() -> dict[str, str]:
     return {"status": "ok", "service": settings.SERVICE_NAME}
 
 
-@app.get("/health/ready", tags=["Health"])
-@app.get("/ready", tags=["Health"])
-async def readiness() -> dict[str, str]:
-    return {"status": "ready", "service": settings.SERVICE_NAME}
+@app.get("/health/ready", tags=["Health"], response_model=None)
+@app.get("/ready", tags=["Health"], response_model=None)
+async def readiness() -> dict[str, str] | JSONResponse:
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        await idempotency_mgr.ping()
+        return {"status": "ready", "service": settings.SERVICE_NAME}
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
+        return JSONResponse(status_code=503, content={"status": "degraded", "service": settings.SERVICE_NAME})
 
 
 if __name__ == "__main__":

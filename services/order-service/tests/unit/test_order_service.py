@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.clients.catalog_client import CatalogGrpcClient, ReservationResult
+from app.clients.catalog_client import CatalogGrpcClient, CatalogItemSnapshot, ReservationResult
 from app.events.producer import OrderEventProducer
 from app.models.order import (
     Order,
@@ -17,6 +17,7 @@ from app.services.order_service import (
     InvalidStateTransitionError,
     ItemReservationError,
     OrderService,
+    PriceMismatchError,
 )
 
 
@@ -25,6 +26,16 @@ def mock_catalog_client() -> MagicMock:
     client = MagicMock(spec=CatalogGrpcClient)
     client.reserve_item = AsyncMock(return_value=ReservationResult(success=True))
     client.release_item = AsyncMock(return_value=True)
+    client.mark_item_sold = AsyncMock(return_value=True)
+    client.get_item = AsyncMock(
+        side_effect=lambda item_id: CatalogItemSnapshot(
+            item_id=item_id,
+            seller_id=uuid.uuid4(),
+            price_units=150,
+            price_nanos=0,
+            currency="USD",
+        )
+    )
     return client
 
 
@@ -33,8 +44,6 @@ def mock_idempotency_mgr() -> MagicMock:
     mgr = MagicMock(spec=IdempotencyManager)
     mgr.acquire_lock = AsyncMock(return_value=True)
     mgr.release_lock = AsyncMock()
-    mgr.store_response = AsyncMock()
-    mgr.get_cached_response = AsyncMock(return_value=None)
     return mgr
 
 
@@ -74,10 +83,22 @@ async def test_create_order_success(
         producer=mock_producer,
     )
 
+    catalog_seller_id = uuid.uuid4()
+    item_id = uuid.uuid4()
+    mock_catalog_client.get_item = AsyncMock(
+        return_value=CatalogItemSnapshot(
+            item_id=item_id,
+            seller_id=catalog_seller_id,
+            price_units=150,
+            price_nanos=0,
+            currency="USD",
+        )
+    )
+
     req = OrderCreateRequest(
         buyer_id=uuid.uuid4(),
-        seller_id=uuid.uuid4(),
-        item_id=uuid.uuid4(),
+        seller_id=uuid.uuid4(),  # Intentionally different; catalog seller_id must win
+        item_id=item_id,
         total_amount_units=150,
         currency="USD",
     )
@@ -85,17 +106,57 @@ async def test_create_order_success(
     order = await service.create_order(mock_session, req, idempotency_key="key-test-1")
 
     assert order.buyer_id == req.buyer_id
+    assert order.seller_id == catalog_seller_id
     assert order.item_id == req.item_id
     assert order.status == OrderStatus.ESCROW_HELD
     assert order.total_amount_units == 150
 
     mock_idempotency_mgr.acquire_lock.assert_awaited_once_with("key-test-1")
     mock_catalog_client.reserve_item.assert_awaited_once()
+    mock_catalog_client.get_item.assert_awaited_once_with(item_id)
     mock_session.add.assert_called_once()
     mock_session.commit.assert_awaited_once()
     mock_producer.publish_order_placed.assert_awaited_once()
     mock_producer.publish_order_escrow_locked.assert_awaited_once()
-    mock_idempotency_mgr.store_response.assert_awaited_once()
+    mock_idempotency_mgr.release_lock.assert_awaited_once_with("key-test-1")
+
+
+@pytest.mark.asyncio
+async def test_create_order_rejects_price_tampering(
+    mock_catalog_client: MagicMock,
+    mock_idempotency_mgr: MagicMock,
+    mock_producer: MagicMock,
+    mock_session: MagicMock,
+) -> None:
+    item_id = uuid.uuid4()
+    mock_catalog_client.get_item = AsyncMock(
+        return_value=CatalogItemSnapshot(
+            item_id=item_id,
+            seller_id=uuid.uuid4(),
+            price_units=500,
+            price_nanos=0,
+            currency="USD",
+        )
+    )
+    service = OrderService(
+        catalog_client=mock_catalog_client,
+        idempotency_mgr=mock_idempotency_mgr,
+        producer=mock_producer,
+    )
+    req = OrderCreateRequest(
+        buyer_id=uuid.uuid4(),
+        seller_id=uuid.uuid4(),
+        item_id=item_id,
+        total_amount_units=1,
+        currency="USD",
+    )
+
+    with pytest.raises(PriceMismatchError):
+        await service.create_order(mock_session, req, idempotency_key="key-tamper")
+
+    mock_catalog_client.release_item.assert_awaited_once()
+    mock_idempotency_mgr.release_lock.assert_awaited_once_with("key-tamper")
+    mock_session.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -192,6 +253,7 @@ async def test_order_lifecycle_transitions(
     completed = await service.complete_order(mock_session, order_id)
     assert completed.status == OrderStatus.COMPLETED
     assert completed.completed_at is not None
+    mock_catalog_client.mark_item_sold.assert_awaited_once_with(item_id, order_id, order.buyer_id)
     mock_producer.publish_order_completed.assert_awaited_once()
 
     # 3. Trying to ship completed order should fail

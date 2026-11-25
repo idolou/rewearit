@@ -1,4 +1,5 @@
 """Core AI appraisal worker orchestrating preprocessor, cache, VLM, and embedding encoder."""
+import asyncio
 import io
 
 from PIL import Image
@@ -76,8 +77,8 @@ class AIAppraisalWorker:
             logger.info(f"No image URLs provided for item {item_id}; using placeholder.")
             image_bytes = _generate_fallback_image_bytes()
 
-        # 2. Preprocess & Hash
-        processed = self.preprocessor.process_bytes(image_bytes)
+        # 2. Preprocess & Hash (offload CPU-bound PIL work from event loop)
+        processed = await asyncio.to_thread(self.preprocessor.process_bytes, image_bytes)
         image_hash = processed.sha256
 
         # 3. Check Redis Cache
@@ -103,9 +104,10 @@ class AIAppraisalWorker:
             )
 
             # Generate 512-dim embedding
-            embedding = self.embedding_encoder.encode_image(
-                image_bytes=processed.cleaned_bytes,
-                context_text=f"{event.title} {vlm_res.category} {vlm_res.brand}",
+            embedding = await asyncio.to_thread(
+                self.embedding_encoder.encode_image,
+                processed.cleaned_bytes,
+                f"{event.title} {vlm_res.category} {vlm_res.brand}",
             )
 
             brand = vlm_res.brand

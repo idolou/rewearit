@@ -1,12 +1,12 @@
 """Integration tests for Order Service FastAPI endpoints."""
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.v1.orders import get_order_service
-from app.clients.catalog_client import CatalogGrpcClient, ReservationResult
+from app.clients.catalog_client import CatalogGrpcClient, CatalogItemSnapshot, ReservationResult
 from app.core.database import get_session
 from app.events.producer import OrderEventProducer
 from app.main import app
@@ -22,12 +22,20 @@ def mock_dependencies() -> tuple[MagicMock, MagicMock, MagicMock, MagicMock]:
     catalog_client = MagicMock(spec=CatalogGrpcClient)
     catalog_client.reserve_item = AsyncMock(return_value=ReservationResult(success=True))
     catalog_client.release_item = AsyncMock(return_value=True)
+    catalog_client.mark_item_sold = AsyncMock(return_value=True)
+    catalog_client.get_item = AsyncMock(
+        side_effect=lambda item_id: CatalogItemSnapshot(
+            item_id=item_id,
+            seller_id=uuid.uuid4(),
+            price_units=180,
+            price_nanos=0,
+            currency="USD",
+        )
+    )
 
     idemp_mgr = MagicMock(spec=IdempotencyManager)
     idemp_mgr.acquire_lock = AsyncMock(return_value=True)
     idemp_mgr.release_lock = AsyncMock()
-    idemp_mgr.store_response = AsyncMock()
-    idemp_mgr.get_cached_response = AsyncMock(return_value=None)
 
     producer = MagicMock(spec=OrderEventProducer)
     producer.publish_order_placed = AsyncMock()
@@ -45,14 +53,26 @@ def mock_dependencies() -> tuple[MagicMock, MagicMock, MagicMock, MagicMock]:
 
 @pytest.mark.asyncio
 async def test_health_endpoints() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        live_resp = await client.get("/health/live")
-        assert live_resp.status_code == 200
-        assert live_resp.json()["status"] == "ok"
+    mock_conn = AsyncMock()
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = False
 
-        ready_resp = await client.get("/health/ready")
-        assert ready_resp.status_code == 200
-        assert ready_resp.json()["status"] == "ready"
+    mock_engine = MagicMock()
+    mock_engine.connect.return_value = mock_ctx
+
+    with (
+        patch("app.main.engine", mock_engine),
+        patch("app.main.idempotency_mgr.ping", new=AsyncMock(return_value=True)),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            live_resp = await client.get("/health/live")
+            assert live_resp.status_code == 200
+            assert live_resp.json()["status"] == "ok"
+
+            ready_resp = await client.get("/health/ready")
+            assert ready_resp.status_code == 200
+            assert ready_resp.json()["status"] == "ready"
 
 
 @pytest.mark.asyncio

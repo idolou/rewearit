@@ -595,11 +595,16 @@
         const alertBox = document.getElementById("result-alert");
         const safeTitle = document.createElement("div");
         safeTitle.textContent = created.title;
+        let safeImgHref = "#";
+        try {
+          const u = new URL((created.image_urls && created.image_urls[0]) || "", window.location.origin);
+          if (u.protocol === "http:" || u.protocol === "https:") safeImgHref = u.href;
+        } catch (_) {}
         document.getElementById("result-detail").innerHTML = 
           `Item ID: <code>${encodeURIComponent(created.id)}</code><br>` +
           `Title: <strong>${safeTitle.innerHTML}</strong><br>` +
-          `Listing Price: <strong>$${created.price_units} USD</strong> (Your custom price)<br>` +
-          `Studio Image: <a href="${encodeURI(created.image_urls[0])}" target="_blank" style="color: #6ee7b7;">View Catalog Image</a>`;
+          `Listing Price: <strong>$${Number(created.price_units) || 0} USD</strong> (Your custom price)<br>` +
+          `Studio Image: <a href="${safeImgHref.replace(/"/g, "&quot;")}" target="_blank" rel="noopener noreferrer" style="color: #6ee7b7;">View Catalog Image</a>`;
         alertBox.style.display = "block";
         alertBox.scrollIntoView({ behavior: "smooth" });
       } catch (err) {

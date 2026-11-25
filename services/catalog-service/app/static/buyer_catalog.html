@@ -473,8 +473,21 @@
 
   <script>
     let allItems = [];
+    const renderedItemsById = new Map();
     let currentCategory = "";
     let selectedItem = null;
+    let currentIdempotencyKey = "";
+
+    const FALLBACK_IMG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect width='200' height='200' fill='%231e293b'/%3E%3C/svg%3E";
+
+    function safeImageUrl(url) {
+      if (typeof url !== "string") return FALLBACK_IMG;
+      try {
+        const parsed = new URL(url, window.location.origin);
+        if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.href;
+      } catch (_) {}
+      return FALLBACK_IMG;
+    }
 
     const itemsGrid = document.getElementById("items-grid");
     const visualDropzone = document.getElementById("visual-dropzone");
@@ -497,6 +510,7 @@
     }
 
     function renderGrid(items, isVisualSearch = false) {
+      renderedItemsById.clear();
       if (!items || items.length === 0) {
         itemsGrid.innerHTML = `<p style="color: var(--text-muted); grid-column: 1/-1; text-align: center; padding: 3rem 0;">No available garments found.</p>`;
         return;
@@ -504,10 +518,11 @@
 
       itemsGrid.innerHTML = items.map(entry => {
         const item = isVisualSearch ? entry.item : entry;
+        renderedItemsById.set(item.id, item);
         const similarity = isVisualSearch ? Math.round(entry.similarity * 100) : null;
-        const imgSrc = (item.image_urls && item.image_urls.length > 0) ? item.image_urls[0] : "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect width='200' height='200' fill='%231e293b'/%3E%3C/svg%3E";
-        const condition = (item.condition_grade || "GOOD").replace("_", " ");
-        const isAvailable = item.status === "ACTIVE" || item.status === "ANALYZING";
+        const imgSrc = encodeHTML(safeImageUrl((item.image_urls && item.image_urls.length > 0) ? item.image_urls[0] : ""));
+        const condition = encodeHTML((item.condition_grade || "GOOD").replaceAll("_", " "));
+        const isAvailable = item.status === "ACTIVE";
 
         return `
           <div class="item-card">
@@ -521,9 +536,9 @@
               <div class="item-title">${encodeHTML(item.title)}</div>
               <div class="item-meta">Size: <strong>${encodeHTML(item.size || "M")}</strong> ${item.color ? `• ${encodeHTML(item.color)}` : ""}</div>
               <div class="item-footer">
-                <span class="item-price">$${item.price_units}</span>
-                <button class="btn-buy" onclick="openBuyModal('${item.id}')" ${!isAvailable ? "disabled" : ""}>
-                  ${isAvailable ? "Buy Now" : item.status}
+                <span class="item-price">$${Number(item.price_units) || 0}</span>
+                <button class="btn-buy" onclick="openBuyModal('${encodeHTML(item.id)}')" ${!isAvailable ? "disabled" : ""}>
+                  ${isAvailable ? "Buy Now" : encodeHTML(item.status || "UNAVAILABLE")}
                 </button>
               </div>
             </div>
@@ -615,8 +630,13 @@
 
     // Buy / Escrow Modal
     window.openBuyModal = function(itemId) {
-      selectedItem = allItems.find(i => i.id === itemId);
+      selectedItem = renderedItemsById.get(itemId) || allItems.find(i => i.id === itemId);
       if (!selectedItem) return;
+
+      // Reuse one idempotency key across retries for this checkout modal session
+      currentIdempotencyKey = "order-buyer-" + (
+        (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).substring(2, 12)
+      );
 
       document.getElementById("modal-item-title").innerText = selectedItem.title;
       document.getElementById("modal-item-price").innerText = `$${selectedItem.price_units} USD`;
@@ -638,40 +658,23 @@
       btn.disabled = true;
       btn.innerText = "Reserving 1-of-1 Garment via gRPC...";
 
-      const idempotencyKey = "order-buyer-" + Math.random().toString(36).substring(2, 12);
       const payload = {
         item_id: selectedItem.id,
         seller_id: selectedItem.seller_id,
         buyer_id: "00000000-0000-0000-0000-000000000002",
         total_amount_units: selectedItem.price_units,
-        currency: "USD",
+        currency: selectedItem.price_currency || "USD",
       };
 
       try {
-        // Try calling order-service directly (:8003) or proxy
-        let orderEndpoint = "http://localhost:8003/api/v1/orders";
-        let res;
-        try {
-          res = await fetch(orderEndpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Idempotency-Key": idempotencyKey,
-            },
-            body: JSON.stringify(payload),
-          });
-        } catch (e) {
-          // If port 8003 direct is blocked by browser, try relative proxy
-          orderEndpoint = "/api/v1/orders";
-          res = await fetch(orderEndpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Idempotency-Key": idempotencyKey,
-            },
-            body: JSON.stringify(payload),
-          });
-        }
+        const res = await fetch("/api/v1/orders", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": currentIdempotencyKey,
+          },
+          body: JSON.stringify(payload),
+        });
 
         if (res.status === 409) {
           statusDiv.style.display = "block";
