@@ -80,12 +80,12 @@ async def test_complete_catalog_lifecycle_e2e() -> None:
         headers=[("event_type", b"ai.appraisal_completed")],
     )
 
-    # 5. Verify item is now ACTIVE with 512-dim embedding and updated condition
+    # 5. Verify item is now ACTIVE with 512-dim embedding and preserves seller-selected condition
     async with async_session_maker() as session:
         item = await session.get(Item, item_uuid)
         assert item is not None
         assert item.status == ItemStatus.ACTIVE
-        assert item.condition_grade == ConditionGrade.EXCELLENT
+        assert item.condition_grade == ConditionGrade.GOOD
         assert item.embedding is not None
         assert len(item.embedding) == 512
 

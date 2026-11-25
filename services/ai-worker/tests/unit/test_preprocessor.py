@@ -29,3 +29,23 @@ def test_process_image_bytes() -> None:
     processed_img = Image.open(io.BytesIO(result.cleaned_bytes))
     assert processed_img.size == (1024, 768)
     assert processed_img.getexif() == {}
+
+
+def test_resolve_internal_url(monkeypatch: object) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "S3_PUBLIC_URL", "http://localhost:9000")  # type: ignore[attr-defined]
+    monkeypatch.setattr(settings, "S3_ENDPOINT", "http://minio:9000")  # type: ignore[attr-defined]
+
+    assert (
+        ImagePreprocessor.resolve_internal_url("http://localhost:9000/rewearit-garments/clean/a.jpg")
+        == "http://minio:9000/rewearit-garments/clean/a.jpg"
+    )
+    assert (
+        ImagePreprocessor.resolve_internal_url("s3://rewearit-garments/clean/a.jpg")
+        == "http://minio:9000/rewearit-garments/clean/a.jpg"
+    )
+    assert (
+        ImagePreprocessor.resolve_internal_url("https://cdn.example.com/photo.jpg")
+        == "https://cdn.example.com/photo.jpg"
+    )

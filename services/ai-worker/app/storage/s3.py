@@ -1,5 +1,6 @@
 """S3 / MinIO object storage helper for garment photos."""
 import io
+import json
 import uuid
 
 import boto3
@@ -33,11 +34,30 @@ class S3Storage:
         self._bucket_verified = False
         self._s3_available: bool | None = None
 
+    def _ensure_public_read_policy(self) -> None:
+        """Grant anonymous read-only access so browser UIs can render garment photos."""
+        policy = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {"AWS": ["*"]},
+                    "Action": ["s3:GetObject"],
+                    "Resource": [f"arn:aws:s3:::{self.bucket}/*"],
+                }
+            ],
+        }
+        try:
+            self._client.put_bucket_policy(Bucket=self.bucket, Policy=json.dumps(policy))
+        except Exception as e:
+            logger.debug(f"Could not set public read policy on bucket {self.bucket}: {e}")
+
     def _ensure_bucket(self) -> None:
         if self._bucket_verified:
             return
         try:
             self._client.head_bucket(Bucket=self.bucket)
+            self._ensure_public_read_policy()
             self._bucket_verified = True
             self._s3_available = True
         except ClientError as e:
@@ -45,6 +65,7 @@ class S3Storage:
             if code in ("404", "NoSuchBucket"):
                 try:
                     self._client.create_bucket(Bucket=self.bucket)
+                    self._ensure_public_read_policy()
                     self._bucket_verified = True
                     self._s3_available = True
                 except Exception as ce:

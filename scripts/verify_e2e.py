@@ -161,8 +161,20 @@ def run_e2e_verification() -> int:
     log_pass(f"Auto-filled Brand: {auto_fill.get('brand')}, Category: {auto_fill.get('category')}")
     log_pass(f"Fair Market Valuation: Min=${price_range.get('min_price')}, Target=${price_range.get('target_price')}, Max=${price_range.get('max_price')}")
 
+    # Verify MinIO serves the clean studio image publicly (HTTP 200)
+    try:
+        with urllib.request.urlopen(str(clean_img_url), timeout=10.0) as img_resp:
+            clean_img_bytes = img_resp.read()
+            if img_resp.status != 200 or not clean_img_bytes:
+                log_fail(f"Studio image download returned HTTP {img_resp.status}")
+                return 1
+            log_pass(f"Studio image publicly downloadable from MinIO ({len(clean_img_bytes)} bytes)")
+    except Exception as e:
+        log_fail(f"Studio image not downloadable at {clean_img_url}: {e}")
+        return 1
+
     # Step 2: Publish Item to Catalog with Seller Custom Price
-    log_step(2, "Publish Item to Catalog")
+    log_step(2, "Publish Item to Catalog & Wait for Async AI Activation")
     seller_id = str(uuid.uuid4())
     chosen_price = price_range.get("target_price", 55)
     item_payload = {
@@ -187,14 +199,32 @@ def run_e2e_verification() -> int:
     item_id = item_data["id"]
     log_pass(f"Item published successfully: id={item_id}, status={item_data['status']}, price=${chosen_price}")
 
+    # Wait for Kafka -> ai-worker -> catalog-service appraisal & embedding activation
+    activated = False
+    for _ in range(40):
+        st, polled = http_request(f"{CATALOG_URL}/api/v1/items/{item_id}")
+        if st == 200 and isinstance(polled, dict) and polled.get("status") == "ACTIVE":
+            activated = True
+            break
+        time.sleep(0.25)
+    if not activated:
+        log_fail(f"Item {item_id} did not transition to ACTIVE within 10s")
+        return 1
+    log_pass(f"Async Kafka appraisal complete: item {item_id} is now ACTIVE with 512-dim embedding")
+
     # Step 3: Photo Search (pgvector Visual Similarity)
     log_step(3, "Visual Photo Search via pgvector")
-    files = {"file": ("query.jpg", SAMPLE_JPEG, "image/jpeg")}
+    files = {"file": ("query.jpg", clean_img_bytes, "image/jpeg")}
     status, search_results = http_request(f"{CATALOG_URL}/api/v1/items/search/visual-image?limit=5", method="POST", files=files)
     if status != 200 or not isinstance(search_results, list):
         log_fail(f"Visual search failed (HTTP {status}): {search_results}")
         return 1
-    log_pass(f"Visual search returned {len(search_results)} candidate items with cosine distance")
+    matched_ids = [r.get("item", {}).get("id") for r in search_results if isinstance(r, dict)]
+    if item_id not in matched_ids:
+        log_fail(f"Published item {item_id} not found in visual search results: {matched_ids}")
+        return 1
+    top_sim = next((r.get("similarity") for r in search_results if r.get("item", {}).get("id") == item_id), None)
+    log_pass(f"Visual search matched published item among {len(search_results)} candidates (similarity={top_sim})")
 
     # Step 4: Order Placement & Atomic 1-of-1 Escrow Lock
     log_step(4, "Place Order & Atomic 1-of-1 Garment Lock")
@@ -244,6 +274,19 @@ def run_e2e_verification() -> int:
         log_fail(f"Order completion failed (HTTP {status}): {completed_order}")
         return 1
     log_pass(f"Order completed: id={order_id}, status={completed_order['status']}")
+
+    # Wait for Kafka order.completed -> catalog-service SOLD transition
+    marked_sold = False
+    for _ in range(20):
+        st, polled = http_request(f"{CATALOG_URL}/api/v1/items/{item_id}")
+        if st == 200 and isinstance(polled, dict) and polled.get("status") == "SOLD":
+            marked_sold = True
+            break
+        time.sleep(0.25)
+    if not marked_sold:
+        log_fail(f"Item {item_id} did not transition to SOLD within 5s after order completion")
+        return 1
+    log_pass(f"Async Kafka order.completed propagated: item {item_id} is now SOLD")
 
     # Step 7: Distributed Traces Verification (Jaeger)
     log_step(7, "Inspect Distributed Tracing in Jaeger")

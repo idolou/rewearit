@@ -189,6 +189,11 @@ async def generate_embedding(request: Request) -> EmbeddingResponse:
     if len(image_bytes) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail=f"Uploaded image exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)}MB size limit")
 
-    embedding = _encoder.encode_image(image_bytes, context_text=context_text)
+    try:
+        processed_bytes = _preprocessor.process_bytes(image_bytes).cleaned_bytes
+    except Exception:
+        processed_bytes = image_bytes
+
+    embedding = _encoder.encode_image(processed_bytes, context_text=context_text)
     return EmbeddingResponse(embedding=embedding, dimension=len(embedding))
 

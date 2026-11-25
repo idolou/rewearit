@@ -60,18 +60,28 @@ class ImagePreprocessor:
             format="JPEG",
         )
 
-    async def fetch_image(self, url: str) -> bytes:
-        """Fetch image bytes from HTTP URL or local MinIO."""
-        logger.info(f"Fetching image from url: {url}")
+    @staticmethod
+    def resolve_internal_url(url: str) -> str:
+        """Rewrite s3:// URIs and public S3 URLs to the internal S3 endpoint."""
         if url.startswith("s3://"):
-            # MinIO / S3 path: e.g. s3://rewearit-garments/photo.jpg
-            # Convert to HTTP endpoint
-            parts = url.replace("s3://", "").split("/", 1)
+            parts = url.replace("s3://", "", 1).split("/", 1)
             bucket = parts[0]
             key = parts[1] if len(parts) > 1 else ""
-            url = f"{settings.S3_ENDPOINT}/{bucket}/{key}"
+            return f"{settings.S3_ENDPOINT.rstrip('/')}/{bucket}/{key}"
+
+        public_base = settings.S3_PUBLIC_URL.rstrip("/")
+        internal_base = settings.S3_ENDPOINT.rstrip("/")
+        if public_base and public_base != internal_base and url.startswith(f"{public_base}/"):
+            return f"{internal_base}{url[len(public_base):]}"
+
+        return url
+
+    async def fetch_image(self, url: str) -> bytes:
+        """Fetch image bytes from HTTP URL or local MinIO."""
+        resolved_url = self.resolve_internal_url(url)
+        logger.info(f"Fetching image from url: {resolved_url}")
 
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url)
+            response = await client.get(resolved_url)
             response.raise_for_status()
             return response.content

@@ -1,6 +1,7 @@
 """Async database engine, session management, and schema initialization."""
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from sqlmodel import SQLModel
@@ -31,6 +32,9 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Ensure database tables are created."""
+    """Ensure database tables and incremental columns are created."""
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+        if conn.dialect.name == "postgresql":
+            await conn.execute(text("ALTER TABLE items ADD COLUMN IF NOT EXISTS color VARCHAR(50)"))
+            await conn.execute(text("ALTER TABLE items ADD COLUMN IF NOT EXISTS material VARCHAR(100)"))
